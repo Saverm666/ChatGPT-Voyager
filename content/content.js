@@ -1,7 +1,7 @@
 const SCRIPT_NAME = "AIChatEnhancerExtension";
 const FORMULA_COPY_FORMATS = {
   LATEX_INLINE: "latex",
-  MATHML: "mathml",
+  UNICODE_MATH: "unicode-math",
   LATEX_SOURCE: "latex-source"
 };
 const DEFAULT_SETTINGS = {
@@ -13,8 +13,11 @@ const DEFAULT_SETTINGS = {
 const DEFAULT_FORMULA_COPY_FORMAT = DEFAULT_SETTINGS.formulaCopyFormat;
 
 function normalizeFormulaCopyFormat(value) {
-  return Object.values(FORMULA_COPY_FORMATS).includes(value)
-    ? value
+  const normalizedValue =
+    value === "mathml" ? FORMULA_COPY_FORMATS.UNICODE_MATH : value;
+
+  return Object.values(FORMULA_COPY_FORMATS).includes(normalizedValue)
+    ? normalizedValue
     : DEFAULT_FORMULA_COPY_FORMAT;
 }
 
@@ -202,74 +205,26 @@ const formulaCopierModule = (() => {
     return null;
   }
 
-  function normalizeMathMLElement(mathElement) {
-    if (!(mathElement instanceof Element)) {
-      return null;
-    }
-
-    if (!mathElement.children.length) {
-      return null;
-    }
-
-    const mathClone = mathElement.cloneNode(true);
-    const elements = [mathClone, ...mathClone.querySelectorAll("*")];
-
-    elements.forEach((element) => {
-      element.removeAttribute("class");
-      element.removeAttribute("style");
-    });
-
-    if (!mathClone.getAttribute("xmlns")) {
-      mathClone.setAttribute("xmlns", "http://www.w3.org/1998/Math/MathML");
-    }
-
-    return new XMLSerializer().serializeToString(mathClone).trim();
-  }
-
-  function normalizeMathMLString(mathML) {
-    if (!mathML) {
-      return null;
-    }
-
-    const xmlDocument = new DOMParser().parseFromString(mathML, "application/xml");
-
-    if (xmlDocument.querySelector("parsererror")) {
-      return mathML.trim();
-    }
-
-    return normalizeMathMLElement(xmlDocument.documentElement);
-  }
-
-  function isFormulaDisplayMode(target) {
-    return Boolean(
-      target.closest(".katex-display") ||
-        target.matches('mjx-container[display="true"]') ||
-        target.querySelector('mjx-container[display="true"]') ||
-        target.querySelector('math[display="block"]')
+  function canConvertLatexToUnicodeMath() {
+    return (
+      typeof texToUnicodeMath !== "undefined" &&
+      typeof texToUnicodeMath.convertLatexToUnicodeMath === "function"
     );
   }
 
-  function canConvertLatexToMathML() {
-    return typeof temml !== "undefined" && typeof temml.renderToString === "function";
-  }
-
-  function convertLatexToMathML(latex, displayMode) {
-    if (!canConvertLatexToMathML()) {
-      console.warn(`[${SCRIPT_NAME}] Temml 未成功加载，无法将 LaTeX 转为 MathML。`);
+  function convertLatexToUnicodeMath(latex) {
+    if (!canConvertLatexToUnicodeMath()) {
+      console.warn(
+        `[${SCRIPT_NAME}] UnicodeMath 转换器未成功加载，无法将 LaTeX 转为 UnicodeMath。`
+      );
       return null;
     }
 
     try {
-      return normalizeMathMLString(
-        temml.renderToString(latex, {
-          annotate: false,
-          displayMode,
-          throwOnError: true,
-          xml: true
-        })
-      );
+      const unicodeMath = texToUnicodeMath.convertLatexToUnicodeMath(latex);
+      return typeof unicodeMath === "string" ? unicodeMath.trim() || null : null;
     } catch (error) {
-      console.warn(`[${SCRIPT_NAME}] LaTeX 转 MathML 失败。`, {
+      console.warn(`[${SCRIPT_NAME}] LaTeX 转 UnicodeMath 失败。`, {
         latex,
         error
       });
@@ -277,43 +232,27 @@ const formulaCopierModule = (() => {
     }
   }
 
-  function getExistingMathMLSource(containerElement) {
-    const selectors = [
-      "mjx-assistive-mml > math",
-      ".katex-mathml math",
-      'annotation-xml[encoding="MathML-Presentation"] > math',
-      'annotation-xml[encoding="application/mathml+xml"] > math',
-      "math"
-    ];
-
-    for (const selector of selectors) {
-      const mathElement = containerElement.querySelector(selector);
-      const mathML = normalizeMathMLElement(mathElement);
-
-      if (mathML) {
-        return mathML;
-      }
-    }
-
-    return null;
-  }
-
   function getCopyPayload(target) {
-    if (copyFormat === FORMULA_COPY_FORMATS.MATHML) {
+    if (copyFormat === FORMULA_COPY_FORMATS.UNICODE_MATH) {
       const latex = getLatexSource(target);
-      const mathML =
-        (latex && convertLatexToMathML(latex, isFormulaDisplayMode(target))) ||
-        getExistingMathMLSource(target);
 
-      if (!mathML) {
+      if (!latex) {
         return {
-          errorMessage: latex ? "LaTeX 转 MathML 失败" : "未识别到 MathML"
+          errorMessage: "未识别到 LaTeX"
+        };
+      }
+
+      const unicodeMath = convertLatexToUnicodeMath(latex);
+
+      if (!unicodeMath) {
+        return {
+          errorMessage: "LaTeX 转 UnicodeMath 失败"
         };
       }
 
       return {
-        text: mathML,
-        successMessage: "MathML 已复制"
+        text: unicodeMath,
+        successMessage: "UnicodeMath 已复制"
       };
     }
 

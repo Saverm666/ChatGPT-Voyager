@@ -1,15 +1,26 @@
 {
   "manifest_version": 3,
   "name": "GPTLatexCopy",
-  "description": "Copy ChatGPT formulas as LaTeX or MathML and show leave confirmation on Notion.",
-  "version": "0.5.0",
+  "description": "Copy ChatGPT formulas as LaTeX or UnicodeMath and show leave confirmation on Notion.",
+  "version": "0.5.2",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": ["storage", "tabs"],
   "background": {
     "service_worker": "background/service-worker.js"
   },
   "action": {
     "default_title": "GPTLatexCopy",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
   "options_page": "options/options.html",
   "content_scripts": [
@@ -22,7 +33,7 @@
         "https://*.notion.so/*",
         "https://*.notion.site/*"
       ],
-      "js": ["vendor/temml/temml.min.js", "content/content.js"],
+      "js": ["vendor/tex-to-unicode/tex-to-unicodemath.ascii.js", "content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_start"
     }

@@ -7,7 +7,7 @@
 - 公式点击复制：点击公式即可复制内容
 - 公式复制格式可选：
   - `LaTeX`：自动包上 `$...$`
-  - `MathML (Word)`：使用内置 Temml 将 LaTeX 本地转换为 MathML
+  - `UnicodeMath (Word)`：使用内置转换器将 LaTeX 本地转成 UnicodeMath
   - `LaTeX (纯文本，无 $ 符号)`：保持源码纯文本
 - Enter / Ctrl+Enter 增强：单独 Enter 只换行，Ctrl+Enter 才发送
 - Notion 离开确认：关闭、刷新或离开 Notion 页面时弹出确认
@@ -27,11 +27,17 @@
 
 ```text
 .
+├── logo.png
 ├── manifest.json
+├── icons/
+│   ├── icon16.png
+│   ├── icon32.png
+│   ├── icon48.png
+│   └── icon128.png
 ├── vendor/
-│   └── temml/
+│   └── tex-to-unicode/
 │       ├── LICENSE
-│       └── temml.min.js
+│       └── tex-to-unicodemath.ascii.js
 ├── background/
 │   └── service-worker.js
 ├── content/
@@ -63,4 +69,4 @@
 
 ## 第三方依赖
 
-- `Temml`：用于在本地把 LaTeX 转成 MathML，许可证见 `vendor/temml/LICENSE`
+- `tex-to-unicode`：用于在本地把 LaTeX 转成 UnicodeMath，许可证见 `vendor/tex-to-unicode/LICENSE`

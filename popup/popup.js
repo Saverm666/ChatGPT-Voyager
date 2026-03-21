@@ -1,6 +1,6 @@
 const FORMULA_COPY_FORMATS = {
   LATEX_INLINE: "latex",
-  MATHML: "mathml",
+  UNICODE_MATH: "unicode-math",
   LATEX_SOURCE: "latex-source"
 };
 
@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
 };
 const FORMULA_COPY_FORMAT_LABELS = {
   [FORMULA_COPY_FORMATS.LATEX_INLINE]: "LaTeX",
-  [FORMULA_COPY_FORMATS.MATHML]: "MathML (Word)",
+  [FORMULA_COPY_FORMATS.UNICODE_MATH]: "UnicodeMath (Word)",
   [FORMULA_COPY_FORMATS.LATEX_SOURCE]: "LaTeX (纯文本，无 $ 符号)"
 };
 
@@ -31,8 +31,11 @@ const notionCloseGuardToggle = document.getElementById(
 const openOptionsButton = document.getElementById("open-options");
 
 function normalizeFormulaCopyFormat(value) {
-  return Object.values(FORMULA_COPY_FORMATS).includes(value)
-    ? value
+  const normalizedValue =
+    value === "mathml" ? FORMULA_COPY_FORMATS.UNICODE_MATH : value;
+
+  return Object.values(FORMULA_COPY_FORMATS).includes(normalizedValue)
+    ? normalizedValue
     : DEFAULT_SETTINGS.formulaCopyFormat;
 }
 
@@ -91,14 +94,18 @@ function getSiteInfo(urlString) {
 function renderSupportNote(site) {
   if (!site) {
     supportNote.textContent =
-      "当前页面不在支持站点内。ChatGPT 页面支持公式复制和 Enter 增强；Notion 页面支持离开确认。";
+      "当前页面不在支持站点内。\nChatGPT：支持公式复制与 Enter 增强\nNotion：支持离开确认";
     return;
   }
 
   const formulaText = site.supportsFormulaCopier ? "支持" : "暂不支持";
   const enterText = site.supportsEnterEnhancer ? "支持" : "暂不支持";
   const notionText = site.supportsNotionCloseGuard ? "支持" : "暂不支持";
-  supportNote.textContent = `当前站点：${site.name}。公式复制 ${formulaText}，Enter / Ctrl+Enter 增强 ${enterText}，Notion 离开确认 ${notionText}。`;
+  supportNote.textContent =
+    `当前站点：${site.name}\n` +
+    `公式复制：${formulaText}\n` +
+    `Enter / Ctrl+Enter 增强：${enterText}\n` +
+    `Notion 离开确认：${notionText}`;
 }
 
 async function loadPageInfo() {

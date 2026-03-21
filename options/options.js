@@ -1,6 +1,6 @@
 const FORMULA_COPY_FORMATS = {
   LATEX_INLINE: "latex",
-  MATHML: "mathml",
+  UNICODE_MATH: "unicode-math",
   LATEX_SOURCE: "latex-source"
 };
 
@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
 
 const FORMULA_COPY_FORMAT_LABELS = {
   [FORMULA_COPY_FORMATS.LATEX_INLINE]: "LaTeX",
-  [FORMULA_COPY_FORMATS.MATHML]: "MathML (Word)",
+  [FORMULA_COPY_FORMATS.UNICODE_MATH]: "UnicodeMath (Word)",
   [FORMULA_COPY_FORMATS.LATEX_SOURCE]: "LaTeX (纯文本，无 $ 符号)"
 };
 
@@ -29,8 +29,11 @@ const notionCloseGuardInput = document.getElementById(
 const saveStatus = document.getElementById("save-status");
 
 function normalizeFormulaCopyFormat(value) {
-  return Object.values(FORMULA_COPY_FORMATS).includes(value)
-    ? value
+  const normalizedValue =
+    value === "mathml" ? FORMULA_COPY_FORMATS.UNICODE_MATH : value;
+
+  return Object.values(FORMULA_COPY_FORMATS).includes(normalizedValue)
+    ? normalizedValue
     : DEFAULT_SETTINGS.formulaCopyFormat;
 }
 
