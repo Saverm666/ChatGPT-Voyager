@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPTLatexCopy 设置</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <p class="eyebrow">Settings</p>
+        <h1>GPTLatexCopy 配置</h1>
+        <p class="desc">按需开启功能并选择公式复制格式。保存后，已打开的支持页面会同步更新。</p>
+
+        <form id="settings-form" class="form">
+          <section class="setting-block">
+            <p class="block-title">公式复制格式</p>
+            <p class="block-desc">选择点击公式时复制的格式。</p>
+
+            <div class="radio-group">
+              <label class="radio-option" for="formula-copy-format-latex">
+                <input
+                  id="formula-copy-format-latex"
+                  name="formulaCopyFormat"
+                  type="radio"
+                  value="latex"
+                />
+                <span>LaTeX</span>
+              </label>
+
+              <label class="radio-option" for="formula-copy-format-mathml">
+                <input
+                  id="formula-copy-format-mathml"
+                  name="formulaCopyFormat"
+                  type="radio"
+                  value="mathml"
+                />
+                <span>MathML (Word)</span>
+              </label>
+
+              <label class="radio-option" for="formula-copy-format-latex-source">
+                <input
+                  id="formula-copy-format-latex-source"
+                  name="formulaCopyFormat"
+                  type="radio"
+                  value="latex-source"
+                  checked
+                />
+                <span>LaTeX (纯文本，无 $ 符号)</span>
+              </label>
+            </div>
+          </section>
+
+          <label class="feature-row" for="formula-copier-enabled">
+            <span>
+              <strong>公式点击复制</strong>
+              <small>开启后点击公式即可按上方格式复制。</small>
+            </span>
+            <input id="formula-copier-enabled" name="formulaCopierEnabled" type="checkbox" />
+          </label>
+
+          <label class="feature-row" for="enter-enhancer-enabled">
+            <span>
+              <strong>Enter / Ctrl+Enter 增强</strong>
+              <small>单独 Enter 只换行，Ctrl+Enter 才发送。</small>
+            </span>
+            <input id="enter-enhancer-enabled" name="enterEnhancerEnabled" type="checkbox" />
+          </label>
+
+          <label class="feature-row" for="notion-close-guard-enabled">
+            <span>
+              <strong>Notion 离开确认</strong>
+              <small>关闭、刷新或离开 Notion 页面时弹出确认。</small>
+            </span>
+            <input id="notion-close-guard-enabled" name="notionCloseGuardEnabled" type="checkbox" />
+          </label>
+
+          <button type="submit">保存设置</button>
+        </form>
+
+        <section class="supported-sites">
+          <p class="sites-title">当前支持站点</p>
+          <p class="sites-note">ChatGPT 页面支持公式点击复制与 Enter 增强；Notion 页面支持离开确认，包含 `notion.so`、`*.notion.so` 和 `*.notion.site`。</p>
+        </section>
+
+        <p id="save-status" class="status"></p>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

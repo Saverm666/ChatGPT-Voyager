@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPTLatexCopy</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header>
+        <p class="eyebrow">Chrome Extension</p>
+        <h1>GPTLatexCopy</h1>
+      </header>
+
+      <section class="panel">
+        <p class="label">当前页面</p>
+        <p id="page-title" class="value">读取中...</p>
+        <p id="page-url" class="muted"></p>
+        <p id="support-note" class="support-note"></p>
+      </section>
+
+      <section class="panel">
+        <p class="section-title">公式复制格式</p>
+        <p class="group-desc">选择点击公式时复制的格式</p>
+
+        <label class="radio-row" for="formula-copy-format-latex">
+          <input
+            id="formula-copy-format-latex"
+            name="formula-copy-format"
+            type="radio"
+            value="latex"
+          />
+          <span>LaTeX</span>
+        </label>
+
+        <label class="radio-row" for="formula-copy-format-mathml">
+          <input
+            id="formula-copy-format-mathml"
+            name="formula-copy-format"
+            type="radio"
+            value="mathml"
+          />
+          <span>MathML (Word)</span>
+        </label>
+
+        <label class="radio-row" for="formula-copy-format-latex-source">
+          <input
+            id="formula-copy-format-latex-source"
+            name="formula-copy-format"
+            type="radio"
+            value="latex-source"
+            checked
+          />
+          <span>LaTeX (纯文本，无 $ 符号)</span>
+        </label>
+      </section>
+
+      <section class="panel">
+        <p class="label">功能开关</p>
+
+        <label class="toggle-row" for="formula-copier-enabled">
+          <span class="toggle-copy">
+            <strong>公式点击复制</strong>
+            <small>开启后点击公式即可按上方格式复制</small>
+          </span>
+          <input id="formula-copier-enabled" type="checkbox" />
+        </label>
+
+        <label class="toggle-row" for="enter-enhancer-enabled">
+          <span class="toggle-copy">
+            <strong>Enter / Ctrl+Enter 增强</strong>
+            <small>Enter 换行，Ctrl+Enter 发送</small>
+          </span>
+          <input id="enter-enhancer-enabled" type="checkbox" />
+        </label>
+
+        <label class="toggle-row" for="notion-close-guard-enabled">
+          <span class="toggle-copy">
+            <strong>Notion 离开确认</strong>
+            <small>关闭、刷新或离开 Notion 页面时弹出确认</small>
+          </span>
+          <input id="notion-close-guard-enabled" type="checkbox" />
+        </label>
+      </section>
+
+      <div class="actions">
+        <button id="open-options" type="button" class="secondary">打开设置页</button>
+      </div>
+
+      <p id="status" class="status">修改后会自动保存，并在已打开页面即时生效。</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

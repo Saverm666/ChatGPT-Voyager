@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "GPTLatexCopy",
+  "description": "Copy ChatGPT formulas as LaTeX or MathML and show leave confirmation on Notion.",
+  "version": "0.5.0",
+  "permissions": ["storage", "tabs"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_title": "GPTLatexCopy",
+    "default_popup": "popup/popup.html"
+  },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://notion.so/*",
+        "https://www.notion.so/*",
+        "https://*.notion.so/*",
+        "https://*.notion.site/*"
+      ],
+      "js": ["vendor/temml/temml.min.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_start"
+    }
+  ]
+}
