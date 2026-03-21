@@ -1,9 +1,9 @@
 .formula-copier-hover,
 .formula-copier-selected {
-  outline: 2px solid #4a90e2 !important;
+  outline: 2px solid rgba(0, 0, 0, 0.72) !important;
   border-radius: 5px;
   cursor: pointer;
-  box-shadow: 0 0 5px rgba(74, 144, 226, 0.5);
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.18);
   transition: outline-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -12,7 +12,7 @@
   z-index: 2147483647;
   padding: 5px 10px;
   border-radius: 999px;
-  background: #4a90e2;
+  background: rgba(17, 17, 17, 0.92);
   color: #ffffff;
   font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   pointer-events: none;
@@ -24,4 +24,639 @@
 .formula-copier-feedback.visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.voyager-gpt-entry-root {
+  position: fixed;
+  z-index: 2147483645;
+  display: block;
+  top: 16px;
+  left: 16px;
+  line-height: 0;
+  pointer-events: auto;
+}
+
+.voyager-gpt-entry-root.voyager-gpt-entry-root-inline {
+  position: relative;
+  z-index: 1;
+  top: auto;
+  left: auto;
+  flex: 0 0 auto;
+  margin-inline-end: 8px;
+}
+
+.voyager-gpt-entry-button,
+.voyager-gpt-panel-close,
+.voyager-gpt-panel-link,
+.voyager-gpt-panel-item {
+  font: inherit;
+}
+
+.voyager-gpt-entry-button {
+  appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--voyager-gpt-entry-height, 36px);
+  min-height: var(--voyager-gpt-entry-height, 36px);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #0d0d0d;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.42857;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-2px);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.voyager-gpt-entry-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 100%;
+  transform: translateY(1px);
+}
+
+.voyager-gpt-entry-button:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.voyager-gpt-entry-root.open .voyager-gpt-entry-button {
+  background: transparent;
+}
+
+.voyager-gpt-entry-button:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2.5px;
+}
+
+.voyager-gpt-entry-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-left: -2px;
+}
+
+.voyager-gpt-entry-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 20px;
+  transform: translateY(-1px);
+  white-space: nowrap;
+}
+
+.voyager-gpt-panel {
+  position: fixed;
+  z-index: 2147483646;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.18),
+    0 6px 18px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.voyager-gpt-panel-header,
+.voyager-gpt-panel-footer,
+.voyager-gpt-panel-item-row,
+.voyager-gpt-panel-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voyager-gpt-panel-header {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.voyager-gpt-panel-heading,
+.voyager-gpt-panel-title {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.voyager-gpt-panel-heading {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.voyager-gpt-panel-subheading,
+.voyager-gpt-panel-desc,
+.voyager-gpt-panel-item-meta,
+.voyager-gpt-panel-empty,
+.voyager-gpt-panel-status {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.56);
+}
+
+.voyager-gpt-panel-subheading,
+.voyager-gpt-panel-desc,
+.voyager-gpt-panel-item-meta,
+.voyager-gpt-panel-empty,
+.voyager-gpt-panel-status {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.voyager-gpt-panel-section + .voyager-gpt-panel-section {
+  margin-top: 16px;
+}
+
+.voyager-gpt-panel-section {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.voyager-gpt-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.voyager-gpt-panel-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.voyager-gpt-panel-add-button {
+  appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #0d0d0d;
+  border-radius: 8px;
+  background: transparent;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.voyager-gpt-panel-add-button::before {
+  content: "+";
+  color: #0d0d0d;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  transform: translateY(-0.5px);
+}
+
+.voyager-gpt-panel-add-button:hover {
+  background: #0d0d0d;
+}
+
+.voyager-gpt-panel-add-button:hover::before {
+  color: #ffffff;
+}
+
+.voyager-gpt-panel-add-button:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
+}
+
+.voyager-gpt-panel-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-top: 4px;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.voyager-gpt-panel-section-prompts .voyager-gpt-panel-list {
+  max-height: min(34vh, 320px);
+}
+
+.voyager-gpt-panel-section-history .voyager-gpt-panel-list {
+  max-height: min(24vh, 220px);
+}
+
+.voyager-gpt-panel-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.voyager-gpt-panel-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.voyager-gpt-panel-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.voyager-gpt-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.voyager-gpt-modal-overlay[hidden] {
+  display: none;
+}
+
+.voyager-gpt-modal {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(78vh, 680px);
+}
+
+.voyager-gpt-panel-editor {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.24),
+    0 6px 18px rgba(15, 23, 42, 0.1);
+}
+
+.voyager-gpt-panel-editor[hidden] {
+  display: none;
+}
+
+.voyager-gpt-panel-editor-heading {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.62);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.voyager-gpt-panel-input,
+.voyager-gpt-panel-textarea,
+.voyager-gpt-panel-editor-button {
+  font: inherit;
+}
+
+.voyager-gpt-panel-input,
+.voyager-gpt-panel-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: rgba(0, 0, 0, 0.88);
+  outline: none;
+}
+
+.voyager-gpt-panel-input:focus,
+.voyager-gpt-panel-textarea:focus {
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.voyager-gpt-panel-textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.voyager-gpt-panel-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.voyager-gpt-panel-editor-button {
+  appearance: none;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.72);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.voyager-gpt-panel-editor-button:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.voyager-gpt-panel-editor-button-secondary {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.68);
+}
+
+.voyager-gpt-panel-editor-button-secondary:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.voyager-gpt-panel-editor-button-danger {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.voyager-gpt-panel-editor-button-danger:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.voyager-gpt-panel-item {
+  appearance: none;
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  background: rgba(247, 247, 248, 0.78);
+  color: rgba(0, 0, 0, 0.86);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.voyager-gpt-panel-item:hover {
+  background: rgba(243, 243, 245, 0.98);
+  border-color: rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+.voyager-gpt-panel-item-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: rgba(0, 0, 0, 0.86);
+  word-break: break-word;
+}
+
+.voyager-gpt-panel-expression {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 56px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  scrollbar-width: thin;
+}
+
+.voyager-gpt-panel-expression::-webkit-scrollbar {
+  height: 6px;
+}
+
+.voyager-gpt-panel-expression::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.voyager-gpt-panel-expression .katex {
+  display: block;
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 1.14em;
+  line-height: 1;
+}
+
+.voyager-gpt-panel-expression[data-formula-preview="text"] {
+  font-family:
+    "Cambria Math",
+    "STIX Two Math",
+    "Latin Modern Math",
+    "Times New Roman",
+    serif;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.voyager-gpt-panel-item-summary {
+  color: rgba(0, 0, 0, 0.56);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.voyager-gpt-panel-close,
+.voyager-gpt-panel-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.62);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.voyager-gpt-panel-close:hover,
+.voyager-gpt-panel-link:hover {
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.voyager-gpt-panel-footer {
+  position: sticky;
+  bottom: -14px;
+  z-index: 1;
+  margin: 16px -14px -14px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.voyager-gpt-panel-status {
+  flex: 1 1 auto;
+  min-height: 18px;
+  text-align: right;
+}
+
+html.dark .voyager-gpt-entry-button {
+  background: transparent;
+  color: #ffffff;
+}
+
+html.dark .voyager-gpt-entry-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html.dark .voyager-gpt-entry-root.open .voyager-gpt-entry-button {
+  background: transparent;
+}
+
+html.dark .voyager-gpt-entry-button:focus-visible {
+  outline-color: #ffffff;
+}
+
+html.dark .voyager-gpt-panel {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(32, 33, 35, 0.96);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.4),
+    0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+html.dark .voyager-gpt-panel-heading,
+html.dark .voyager-gpt-panel-title,
+html.dark .voyager-gpt-panel-item-title {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-add-button {
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-add-button:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-add-button::before {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-add-button:hover::before {
+  color: rgba(32, 33, 35, 0.98);
+}
+
+html.dark .voyager-gpt-panel-add-button:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-subheading,
+html.dark .voyager-gpt-panel-desc,
+html.dark .voyager-gpt-panel-item-meta,
+html.dark .voyager-gpt-panel-empty,
+html.dark .voyager-gpt-panel-status,
+html.dark .voyager-gpt-panel-close,
+html.dark .voyager-gpt-panel-link {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+html.dark .voyager-gpt-panel-item {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(52, 53, 65, 0.8);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-item:hover {
+  background: rgba(64, 65, 79, 0.96);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+html.dark .voyager-gpt-panel-expression {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(32, 33, 35, 0.92);
+}
+
+html.dark .voyager-gpt-panel-expression::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .voyager-gpt-panel-expression .katex {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html.dark .voyager-gpt-panel-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .voyager-gpt-modal-overlay {
+  background: rgba(0, 0, 0, 0.34);
+}
+
+html.dark .voyager-gpt-panel-editor {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(32, 33, 35, 0.98);
+}
+
+html.dark .voyager-gpt-panel-editor-heading {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+html.dark .voyager-gpt-panel-input,
+html.dark .voyager-gpt-panel-textarea {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(32, 33, 35, 0.92);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-input:focus,
+html.dark .voyager-gpt-panel-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+html.dark .voyager-gpt-panel-editor-button {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-editor-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .voyager-gpt-panel-editor-button-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+html.dark .voyager-gpt-panel-editor-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html.dark .voyager-gpt-panel-editor-button-danger {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-editor-button-danger:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .voyager-gpt-panel-item-summary {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+html.dark .voyager-gpt-panel-footer {
+  border-top-color: rgba(255, 255, 255, 0.08);
+  background: rgba(32, 33, 35, 0.98);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.22);
 }

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GPTLatexCopy",
-  "description": "Copy ChatGPT formulas as LaTeX or UnicodeMath and show leave confirmation on Notion.",
-  "version": "0.5.2",
+  "name": "ChatGPT-Voyager",
+  "description": "Copy ChatGPT formulas, keep formula history, save prompts, and show leave confirmation on Notion.",
+  "version": "0.6.1",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -14,7 +14,7 @@
     "service_worker": "background/service-worker.js"
   },
   "action": {
-    "default_title": "GPTLatexCopy",
+    "default_title": "ChatGPT-Voyager",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -23,6 +23,19 @@
     }
   },
   "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["vendor/katex/fonts/*"],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://notion.so/*",
+        "https://www.notion.so/*",
+        "https://*.notion.so/*",
+        "https://*.notion.site/*"
+      ]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -33,8 +46,13 @@
         "https://*.notion.so/*",
         "https://*.notion.site/*"
       ],
-      "js": ["vendor/tex-to-unicode/tex-to-unicodemath.ascii.js", "content/content.js"],
-      "css": ["content/content.css"],
+      "js": [
+        "shared/shared.js",
+        "vendor/tex-to-unicode/tex-to-unicodemath.ascii.js",
+        "vendor/katex/katex.min.js",
+        "content/content.js"
+      ],
+      "css": ["vendor/katex/katex.min.css", "content/content.css"],
       "run_at": "document_start"
     }
   ]

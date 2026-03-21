@@ -3,90 +3,196 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GPTLatexCopy 设置</title>
+    <title>ChatGPT-Voyager 设置</title>
+    <link rel="stylesheet" href="../vendor/katex/katex.min.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main class="page">
       <section class="card">
-        <p class="eyebrow">Settings</p>
-        <h1>GPTLatexCopy 配置</h1>
-        <p class="desc">按需开启功能并选择公式复制格式。保存后，已打开的支持页面会同步更新。</p>
+        <header class="page-header">
+          <p class="eyebrow">Settings</p>
+          <h1>ChatGPT-Voyager 配置</h1>
+          <p class="desc">
+            按需开启功能并选择公式复制格式。提示词收藏、公式复制历史，以及页内快捷入口会共用同一套数据。
+          </p>
+        </header>
 
-        <form id="settings-form" class="form">
-          <section class="setting-block">
-            <p class="block-title">公式复制格式</p>
-            <p class="block-desc">选择点击公式时复制的格式。</p>
-
-            <div class="radio-group">
-              <label class="radio-option" for="formula-copy-format-latex">
-                <input
-                  id="formula-copy-format-latex"
-                  name="formulaCopyFormat"
-                  type="radio"
-                  value="latex"
-                />
-                <span>LaTeX</span>
-              </label>
-
-              <label class="radio-option" for="formula-copy-format-unicode-math">
-                <input
-                  id="formula-copy-format-unicode-math"
-                  name="formulaCopyFormat"
-                  type="radio"
-                  value="unicode-math"
-                />
-                <span>UnicodeMath (Word)</span>
-              </label>
-
-              <label class="radio-option" for="formula-copy-format-latex-source">
-                <input
-                  id="formula-copy-format-latex-source"
-                  name="formulaCopyFormat"
-                  type="radio"
-                  value="latex-source"
-                  checked
-                />
-                <span>LaTeX (纯文本，无 $ 符号)</span>
-              </label>
+        <section class="section-card">
+          <div class="section-head">
+            <div>
+              <p class="block-title">提示词收藏</p>
+              <p class="block-desc">
+                给提示词起名字后保存，后续在这里或弹窗里点击即可复制到剪切板。
+              </p>
             </div>
-          </section>
+          </div>
 
-          <label class="feature-row" for="formula-copier-enabled">
-            <span>
-              <strong>公式点击复制</strong>
-              <small>开启后点击公式即可按上方格式复制。</small>
-            </span>
-            <input id="formula-copier-enabled" name="formulaCopierEnabled" type="checkbox" />
-          </label>
+          <form id="prompt-form" class="prompt-form">
+            <input id="prompt-edit-id" type="hidden" />
 
-          <label class="feature-row" for="enter-enhancer-enabled">
-            <span>
-              <strong>Enter / Ctrl+Enter 增强</strong>
-              <small>单独 Enter 只换行，Ctrl+Enter 才发送。</small>
-            </span>
-            <input id="enter-enhancer-enabled" name="enterEnhancerEnabled" type="checkbox" />
-          </label>
+            <label class="field">
+              <span>提示词名称</span>
+              <input
+                id="prompt-name"
+                type="text"
+                maxlength="80"
+                placeholder="例如：论文润色 / 翻译 / 代码审查"
+              />
+            </label>
 
-          <label class="feature-row" for="notion-close-guard-enabled">
-            <span>
-              <strong>Notion 离开确认</strong>
-              <small>关闭、刷新或离开 Notion 页面时弹出确认。</small>
-            </span>
-            <input id="notion-close-guard-enabled" name="notionCloseGuardEnabled" type="checkbox" />
-          </label>
+            <label class="field">
+              <span>提示词内容</span>
+              <textarea
+                id="prompt-content"
+                rows="6"
+                placeholder="输入完整提示词，保存后可一键复制。"
+              ></textarea>
+            </label>
 
-          <button type="submit">保存设置</button>
-        </form>
+            <div class="prompt-actions">
+              <button id="save-prompt-button" type="submit" class="primary-button">
+                保存提示词
+              </button>
+              <button
+                id="cancel-prompt-edit"
+                type="button"
+                class="secondary-button"
+                hidden
+              >
+                取消编辑
+              </button>
+            </div>
+
+            <p id="prompt-status" class="status"></p>
+          </form>
+
+          <div class="prompt-library">
+            <div class="prompt-library-head">
+              <p class="block-title">已保存提示词</p>
+              <p class="block-desc">支持复制、编辑和删除。</p>
+            </div>
+
+            <p id="saved-prompts-empty" class="empty-state">还没有保存提示词。</p>
+            <div id="saved-prompts-list" class="prompt-list"></div>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <div class="section-head">
+            <div>
+              <p class="block-title">公式复制历史</p>
+              <p class="block-desc">最近复制的公式会保存在这里，点击即可再次复制。</p>
+            </div>
+            <button
+              id="clear-formula-history"
+              type="button"
+              class="tiny-button"
+              hidden
+            >
+              清空历史
+            </button>
+          </div>
+
+          <p id="formula-history-empty" class="empty-state">还没有复制记录。</p>
+          <div id="formula-history-list" class="history-list"></div>
+        </section>
+
+        <section class="section-card settings-section">
+          <div class="section-head">
+            <div>
+              <p class="block-title">基础设置</p>
+              <p class="block-desc">
+                这里保留全局功能开关；这些项目在弹窗或页内入口也能快速调整。
+              </p>
+            </div>
+          </div>
+
+          <form id="settings-form" class="form">
+            <section class="setting-block">
+              <p class="block-title">公式复制格式</p>
+              <p class="block-desc">选择点击公式时复制的格式。</p>
+
+              <div class="radio-group">
+                <label class="radio-option" for="formula-copy-format-latex">
+                  <input
+                    id="formula-copy-format-latex"
+                    name="formulaCopyFormat"
+                    type="radio"
+                    value="latex"
+                  />
+                  <span>LaTeX</span>
+                </label>
+
+                <label class="radio-option" for="formula-copy-format-unicode-math">
+                  <input
+                    id="formula-copy-format-unicode-math"
+                    name="formulaCopyFormat"
+                    type="radio"
+                    value="unicode-math"
+                  />
+                  <span>UnicodeMath (Word)</span>
+                </label>
+
+                <label class="radio-option" for="formula-copy-format-latex-source">
+                  <input
+                    id="formula-copy-format-latex-source"
+                    name="formulaCopyFormat"
+                    type="radio"
+                    value="latex-source"
+                    checked
+                  />
+                  <span>LaTeX (纯文本，无 $ 符号)</span>
+                </label>
+              </div>
+            </section>
+
+            <label class="feature-row" for="formula-copier-enabled">
+              <span>
+                <strong>公式点击复制</strong>
+                <small>开启后点击公式即可按上方格式复制。</small>
+              </span>
+              <input id="formula-copier-enabled" name="formulaCopierEnabled" type="checkbox" />
+            </label>
+
+            <label class="feature-row" for="enter-enhancer-enabled">
+              <span>
+                <strong>Enter / Ctrl+Enter 增强</strong>
+                <small>单独 Enter 只换行，Ctrl+Enter 才发送。</small>
+              </span>
+              <input id="enter-enhancer-enabled" name="enterEnhancerEnabled" type="checkbox" />
+            </label>
+
+            <label class="feature-row" for="notion-close-guard-enabled">
+              <span>
+                <strong>Notion 离开确认</strong>
+                <small>关闭、刷新或离开 Notion 页面时弹出确认。</small>
+              </span>
+              <input
+                id="notion-close-guard-enabled"
+                name="notionCloseGuardEnabled"
+                type="checkbox"
+              />
+            </label>
+
+            <button type="submit" class="primary-button">保存设置</button>
+          </form>
+
+          <p id="save-status" class="status"></p>
+        </section>
 
         <section class="supported-sites">
           <p class="sites-title">当前支持站点</p>
-          <p class="sites-note">ChatGPT 页面支持公式点击复制与 Enter 增强；Notion 页面支持离开确认，包含 `notion.so`、`*.notion.so` 和 `*.notion.site`。</p>
+          <p class="sites-note">
+            ChatGPT 页面支持公式点击复制与 Enter 增强；Notion 页面支持离开确认，包含
+            `notion.so`、`*.notion.so` 和 `*.notion.site`。
+          </p>
         </section>
-
-        <p id="save-status" class="status"></p>
       </section>
     </main>
+    <script src="../shared/shared.js"></script>
+    <script src="../vendor/tex-to-unicode/tex-to-unicodemath.ascii.js"></script>
+    <script src="../vendor/katex/katex.min.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

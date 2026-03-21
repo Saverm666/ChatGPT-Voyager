@@ -3,14 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GPTLatexCopy</title>
+    <title>ChatGPT-Voyager</title>
+    <link rel="stylesheet" href="../vendor/katex/katex.min.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main class="popup">
-      <header>
-        <p class="eyebrow">Chrome Extension</p>
-        <h1>GPTLatexCopy</h1>
+      <header class="page-header">
+        <p class="eyebrow">Quick Panel</p>
+        <h1>ChatGPT-Voyager</h1>
+        <p class="header-desc">
+          当前站点支持状态、功能开关、提示词收藏与公式复制历史都集中在这里。
+        </p>
       </header>
 
       <section class="panel">
@@ -84,12 +88,41 @@
         </label>
       </section>
 
-      <div class="actions">
-        <button id="open-options" type="button" class="secondary">打开设置页</button>
-      </div>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="section-title">公式复制历史</p>
+            <p class="group-desc">最近复制的公式会保存在这里，点击即可再次复制。</p>
+          </div>
+          <button id="clear-formula-history" type="button" class="inline-action">
+            清空
+          </button>
+        </div>
 
-      <p id="status" class="status">修改后会自动保存，并在已打开页面即时生效。</p>
+        <p id="formula-history-empty" class="empty-state">还没有复制记录。</p>
+        <div id="formula-history-list" class="stack-list"></div>
+      </section>
+
+      <section class="panel">
+        <p class="section-title">提示词收藏</p>
+        <p class="group-desc">在设置页保存常用提示词后，这里可以一键复制。</p>
+        <p id="saved-prompts-empty" class="empty-state">
+          还没有保存提示词，点击下方“打开设置页”开始添加。
+        </p>
+        <div id="saved-prompts-list" class="stack-list"></div>
+      </section>
+
+      <footer class="popup-footer">
+        <div class="actions">
+          <button id="open-options" type="button" class="secondary">打开完整设置页</button>
+        </div>
+
+        <p id="status" class="status">修改后会自动保存，并在已打开页面即时生效。</p>
+      </footer>
     </main>
+    <script src="../shared/shared.js"></script>
+    <script src="../vendor/tex-to-unicode/tex-to-unicodemath.ascii.js"></script>
+    <script src="../vendor/katex/katex.min.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
