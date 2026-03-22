@@ -60,6 +60,7 @@
     box-shadow 140ms ease,
     background-color 140ms ease,
     color 140ms ease;
+  white-space: nowrap;
 }
 
 .voyager-branch-selection-button:hover:not(:disabled) {

@@ -532,8 +532,6 @@ const formulaCopierModule = (() => {
 
 const enterEnhancerModule = (() => {
   let enabled = false;
-  let observer = null;
-  const attachedElements = new Set();
   const EDITABLE_SELECTOR =
     'textarea, div[contenteditable="true"], [contenteditable="plaintext-only"]';
 
@@ -596,7 +594,9 @@ const enterEnhancerModule = (() => {
   }
 
   function handleKeyDown(event) {
-    if (event.isTriggeredByScript) {
+    const editableTarget = getEditableEventTarget(event.target);
+
+    if (event.isTriggeredByScript || !editableTarget) {
       return;
     }
 
@@ -620,9 +620,7 @@ const enterEnhancerModule = (() => {
         return;
       }
 
-      if (event.target instanceof HTMLElement) {
-        simulateAdvancedEnter(event.target);
-      }
+      simulateAdvancedEnter(editableTarget);
 
       return;
     }
@@ -630,15 +628,13 @@ const enterEnhancerModule = (() => {
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    if (event.target instanceof EventTarget) {
-      event.target.dispatchEvent(
-        createKeyEvent("keydown", { key: "Enter", shiftKey: true })
-      );
-    }
+    editableTarget.dispatchEvent(
+      createKeyEvent("keydown", { key: "Enter", shiftKey: true })
+    );
   }
 
   function blockEnterPropagation(event) {
-    if (event.isTriggeredByScript) {
+    if (event.isTriggeredByScript || !getEditableEventTarget(event.target)) {
       return;
     }
 
@@ -654,88 +650,29 @@ const enterEnhancerModule = (() => {
     }
   }
 
-  function isEditableElement(element) {
-    return element.matches(EDITABLE_SELECTOR);
-  }
-
   function isElementVisible(element) {
     return element.getClientRects().length > 0;
   }
 
-  function attachInterceptor(element) {
-    if (!isEditableElement(element) || attachedElements.has(element)) {
-      return;
+  function getEditableEventTarget(target) {
+    const element =
+      target instanceof Element
+        ? target
+        : target instanceof Node
+          ? target.parentElement
+          : null;
+
+    if (!(element instanceof Element)) {
+      return null;
     }
 
-    if (!isElementVisible(element)) {
-      return;
+    const editable = element.closest(EDITABLE_SELECTOR);
+
+    if (!(editable instanceof HTMLElement) || !isElementVisible(editable)) {
+      return null;
     }
 
-    element.addEventListener("keydown", handleKeyDown, true);
-    element.addEventListener("keypress", blockEnterPropagation, true);
-    element.addEventListener("keyup", blockEnterPropagation, true);
-    attachedElements.add(element);
-  }
-
-  function detachInterceptor(element) {
-    if (!attachedElements.has(element)) {
-      return;
-    }
-
-    element.removeEventListener("keydown", handleKeyDown, true);
-    element.removeEventListener("keypress", blockEnterPropagation, true);
-    element.removeEventListener("keyup", blockEnterPropagation, true);
-    attachedElements.delete(element);
-  }
-
-  function scanForInputs(root) {
-    if (!(root instanceof Element)) {
-      return;
-    }
-
-    if (!root.matches(EDITABLE_SELECTOR) && !root.querySelector(EDITABLE_SELECTOR)) {
-      return;
-    }
-
-    if (isEditableElement(root)) {
-      attachInterceptor(root);
-    }
-
-    root.querySelectorAll(EDITABLE_SELECTOR).forEach((element) => attachInterceptor(element));
-  }
-
-  function ensureObserver() {
-    if (observer) {
-      return;
-    }
-
-    observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        mutation.addedNodes.forEach((node) => scanForInputs(node));
-      }
-    });
-
-    observer.observe(document.body || document.documentElement, {
-      childList: true,
-      subtree: true
-    });
-  }
-
-  function initWhenReady() {
-    if (!enabled) {
-      return;
-    }
-
-    if (!document.body) {
-      window.setTimeout(initWhenReady, 100);
-      return;
-    }
-
-    document
-      .querySelectorAll(EDITABLE_SELECTOR)
-      .forEach((element) => attachInterceptor(element));
-
-    ensureObserver();
+    return editable;
   }
 
   return {
@@ -745,7 +682,9 @@ const enterEnhancerModule = (() => {
       }
 
       enabled = true;
-      initWhenReady();
+      document.addEventListener("keydown", handleKeyDown, true);
+      document.addEventListener("keypress", blockEnterPropagation, true);
+      document.addEventListener("keyup", blockEnterPropagation, true);
       console.log(`[${SCRIPT_NAME}] Enter 增强功能已开启。`);
     },
 
@@ -755,13 +694,9 @@ const enterEnhancerModule = (() => {
       }
 
       enabled = false;
-
-      if (observer) {
-        observer.disconnect();
-        observer = null;
-      }
-
-      Array.from(attachedElements).forEach((element) => detachInterceptor(element));
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keypress", blockEnterPropagation, true);
+      document.removeEventListener("keyup", blockEnterPropagation, true);
       console.log(`[${SCRIPT_NAME}] Enter 增强功能已关闭。`);
     }
   };
@@ -771,7 +706,18 @@ const branchSelectionModule = (() => {
   const BRANCH_BUTTON_IDLE_LABEL = "分支提问";
   const BRANCH_BUTTON_LOADING_LABEL = "分支中…";
   const BRANCH_BUTTON_ERROR_LABEL = "重试分支";
-  const SELECTION_IDLE_DELAY_MS = 1000;
+  const SELECTION_IDLE_DELAY_MS = 300;
+  const SELECTION_NAVIGATION_KEYS = new Set([
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowDown",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "Escape"
+  ]);
   const BRANCH_MENU_ITEM_PATTERN =
     /新聊天中的分支|在新聊天中分支|新聊天分支|Branch in new chat|Branch to new chat/i;
   const TURN_MORE_ACTIONS_SELECTOR =
@@ -787,6 +733,8 @@ const branchSelectionModule = (() => {
   let actionInFlight = false;
   let consumeInFlight = false;
   let errorResetTimer = null;
+  let mouseSelectionInProgress = false;
+  let mouseSelectionChanged = false;
 
   function getRangeDisplayRect(range) {
     if (!(range instanceof Range)) {
@@ -923,6 +871,26 @@ const branchSelectionModule = (() => {
     errorResetTimer = null;
   }
 
+  function clearSelectionSyncSchedule() {
+    if (selectionRefreshFrame) {
+      window.cancelAnimationFrame(selectionRefreshFrame);
+      selectionRefreshFrame = null;
+    }
+
+    if (selectionRefreshTimer) {
+      window.clearTimeout(selectionRefreshTimer);
+      selectionRefreshTimer = null;
+    }
+  }
+
+  function hasScheduledSelectionSync() {
+    return Boolean(selectionRefreshFrame || selectionRefreshTimer);
+  }
+
+  function hasVisibleUi() {
+    return Boolean(root && !root.hidden);
+  }
+
   function hideUi() {
     activeSelection = null;
     clearErrorResetTimer();
@@ -931,8 +899,22 @@ const branchSelectionModule = (() => {
       return;
     }
 
+    if (root.hidden && !root.dataset.state) {
+      return;
+    }
+
     resetButtonState();
     root.hidden = true;
+  }
+
+  function hasExpandedSelection() {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return false;
+    }
+
+    return Boolean(selection.toString().replace(/\u00a0/g, " ").trim());
   }
 
   function getSelectionSnapshot() {
@@ -980,6 +962,12 @@ const branchSelectionModule = (() => {
       return;
     }
 
+    const parent = document.body || document.documentElement;
+
+    if (root.parentElement !== parent) {
+      parent.appendChild(root);
+    }
+
     const rootWidth = Math.max(root.offsetWidth || 0, 116);
     const rootHeight = Math.max(root.offsetHeight || 0, 34);
     const anchorRect = snapshot.blockRect || snapshot.rect;
@@ -1011,32 +999,35 @@ const branchSelectionModule = (() => {
     positionUi(snapshot);
   }
 
-  function scheduleSelectionSync() {
+  function scheduleSelectionSync(delayMs = 0, options = {}) {
     if (!enabled) {
       return;
     }
 
-    if (!actionInFlight) {
+    const { hideFirst = true } = options;
+
+    if (hideFirst && !actionInFlight) {
       hideUi();
     }
 
-    if (selectionRefreshTimer) {
-      window.clearTimeout(selectionRefreshTimer);
-      selectionRefreshTimer = null;
-    }
+    clearSelectionSyncSchedule();
 
-    if (selectionRefreshFrame) {
-      window.cancelAnimationFrame(selectionRefreshFrame);
-      selectionRefreshFrame = null;
-    }
-
-    selectionRefreshTimer = window.setTimeout(() => {
-      selectionRefreshTimer = null;
+    const runSync = () => {
       selectionRefreshFrame = window.requestAnimationFrame(() => {
         selectionRefreshFrame = null;
         syncSelectionUi();
       });
-    }, SELECTION_IDLE_DELAY_MS);
+    };
+
+    if (delayMs <= 0) {
+      runSync();
+      return;
+    }
+
+    selectionRefreshTimer = window.setTimeout(() => {
+      selectionRefreshTimer = null;
+      runSync();
+    }, delayMs);
   }
 
   function findTurnMoreActionsButton(turnElement) {
@@ -1716,10 +1707,26 @@ const branchSelectionModule = (() => {
       return;
     }
 
-    scheduleSelectionSync();
+    scheduleSelectionSync(0, { hideFirst: false });
     consumePendingBranchDraft().catch((error) => {
       reportScriptError(`[${SCRIPT_NAME}] 恢复分支草稿失败。`, error);
     });
+  }
+
+  function handleSelectionChange() {
+    if (!enabled || !mouseSelectionInProgress) {
+      return;
+    }
+
+    mouseSelectionChanged = true;
+
+    if (!actionInFlight && hasVisibleUi()) {
+      hideUi();
+    }
+
+    if (hasScheduledSelectionSync()) {
+      clearSelectionSyncSchedule();
+    }
   }
 
   function handleDocumentMouseDown(event) {
@@ -1727,9 +1734,79 @@ const branchSelectionModule = (() => {
       return;
     }
 
-    if (!actionInFlight) {
+    if (event instanceof MouseEvent && event.button !== 0) {
+      return;
+    }
+
+    mouseSelectionInProgress = true;
+    mouseSelectionChanged = false;
+
+    if (!actionInFlight && hasVisibleUi()) {
       hideUi();
     }
+
+    if (hasScheduledSelectionSync()) {
+      clearSelectionSyncSchedule();
+    }
+  }
+
+  function handleDocumentMouseUp(event) {
+    if (root && event.target instanceof Node && root.contains(event.target)) {
+      return;
+    }
+
+    if (event instanceof MouseEvent && event.button !== 0) {
+      return;
+    }
+
+    mouseSelectionInProgress = false;
+
+    if (!mouseSelectionChanged && !hasExpandedSelection()) {
+      return;
+    }
+
+    mouseSelectionChanged = false;
+    scheduleSelectionSync(SELECTION_IDLE_DELAY_MS, { hideFirst: false });
+  }
+
+  function isKeyboardEditableTarget(element) {
+    if (!(element instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(
+      element.closest(
+        "input, textarea, [contenteditable='true'], [contenteditable='plaintext-only']"
+      )
+    );
+  }
+
+  function shouldHandleKeyboardSelectionChange(event) {
+    if (!(event instanceof KeyboardEvent)) {
+      return false;
+    }
+
+    if (isKeyboardEditableTarget(event.target)) {
+      return false;
+    }
+
+    if (SELECTION_NAVIGATION_KEYS.has(event.key)) {
+      return true;
+    }
+
+    return (
+      event.key.toLowerCase() === "a" &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey
+    );
+  }
+
+  function handleKeyboardSelectionChange(event) {
+    if (!shouldHandleKeyboardSelectionChange(event)) {
+      return;
+    }
+
+    scheduleSelectionSync(0, { hideFirst: false });
   }
 
   function handleSelectionViewportChange() {
@@ -1741,7 +1818,7 @@ const branchSelectionModule = (() => {
       return;
     }
 
-    scheduleSelectionSync();
+    scheduleSelectionSync(0, { hideFirst: false });
   }
 
   return {
@@ -1752,15 +1829,15 @@ const branchSelectionModule = (() => {
 
       enabled = true;
       ensureUi();
-      document.addEventListener("selectionchange", scheduleSelectionSync, true);
-      document.addEventListener("mouseup", scheduleSelectionSync, true);
-      document.addEventListener("keyup", scheduleSelectionSync, true);
+      document.addEventListener("selectionchange", handleSelectionChange, true);
+      document.addEventListener("mouseup", handleDocumentMouseUp, true);
+      document.addEventListener("keyup", handleKeyboardSelectionChange, true);
       document.addEventListener("mousedown", handleDocumentMouseDown, true);
       window.addEventListener("resize", handleSelectionViewportChange);
       window.addEventListener("scroll", handleSelectionViewportChange, true);
       window.addEventListener("pageshow", handleVisibilityChange);
       document.addEventListener("visibilitychange", handleVisibilityChange);
-      scheduleSelectionSync();
+      scheduleSelectionSync(0, { hideFirst: false });
       consumePendingBranchDraft().catch((error) => {
         reportScriptError(`[${SCRIPT_NAME}] 初始化分支草稿失败。`, error);
       });
@@ -1773,20 +1850,11 @@ const branchSelectionModule = (() => {
 
       enabled = false;
       clearErrorResetTimer();
+      clearSelectionSyncSchedule();
 
-      if (selectionRefreshFrame) {
-        window.cancelAnimationFrame(selectionRefreshFrame);
-        selectionRefreshFrame = null;
-      }
-
-      if (selectionRefreshTimer) {
-        window.clearTimeout(selectionRefreshTimer);
-        selectionRefreshTimer = null;
-      }
-
-      document.removeEventListener("selectionchange", scheduleSelectionSync, true);
-      document.removeEventListener("mouseup", scheduleSelectionSync, true);
-      document.removeEventListener("keyup", scheduleSelectionSync, true);
+      document.removeEventListener("selectionchange", handleSelectionChange, true);
+      document.removeEventListener("mouseup", handleDocumentMouseUp, true);
+      document.removeEventListener("keyup", handleKeyboardSelectionChange, true);
       document.removeEventListener("mousedown", handleDocumentMouseDown, true);
       window.removeEventListener("resize", handleSelectionViewportChange);
       window.removeEventListener("scroll", handleSelectionViewportChange, true);
@@ -1802,6 +1870,8 @@ const branchSelectionModule = (() => {
       activeSelection = null;
       actionInFlight = false;
       consumeInFlight = false;
+      mouseSelectionInProgress = false;
+      mouseSelectionChanged = false;
     }
   };
 })();
@@ -1875,9 +1945,10 @@ const chatgptHeaderEntryModule = (() => {
   const HEADER_MOUNT_TRIGGER_SELECTOR = [
     "#conversation-header-actions",
     "[data-testid='model-switcher-dropdown-button']",
-    HEADER_SHARE_BUTTON_SELECTOR,
-    "[data-turn-id]"
+    HEADER_SHARE_BUTTON_SELECTOR
   ].join(", ");
+  const HEADER_MOUNT_IGNORE_SELECTOR =
+    "#prompt-textarea, .voyager-gpt-entry-root, .voyager-gpt-panel, .voyager-gpt-modal-overlay";
 
   function setStatus(message) {
     if (!statusElement) {
@@ -2938,8 +3009,15 @@ const chatgptHeaderEntryModule = (() => {
     });
   }
 
+  function shouldIgnoreMountMutationNode(node) {
+    return (
+      node instanceof Element &&
+      Boolean(node.closest(HEADER_MOUNT_IGNORE_SELECTOR))
+    );
+  }
+
   function nodeMatchesHeaderMountTrigger(node) {
-    if (!(node instanceof Element)) {
+    if (!(node instanceof Element) || shouldIgnoreMountMutationNode(node)) {
       return false;
     }
 
@@ -2952,17 +3030,29 @@ const chatgptHeaderEntryModule = (() => {
 
   function shouldScheduleMountFromMutations(mutations) {
     for (const mutation of mutations) {
+      if (shouldIgnoreMountMutationNode(mutation.target)) {
+        continue;
+      }
+
       if (nodeMatchesHeaderMountTrigger(mutation.target)) {
         return true;
       }
 
       for (const node of mutation.addedNodes) {
+        if (shouldIgnoreMountMutationNode(node)) {
+          continue;
+        }
+
         if (nodeMatchesHeaderMountTrigger(node)) {
           return true;
         }
       }
 
       for (const node of mutation.removedNodes) {
+        if (shouldIgnoreMountMutationNode(node)) {
+          continue;
+        }
+
         if (nodeMatchesHeaderMountTrigger(node)) {
           return true;
         }
@@ -3033,7 +3123,7 @@ const chatgptHeaderEntryModule = (() => {
       scheduleMount();
     });
 
-    mountObserver.observe(document.documentElement, {
+    mountObserver.observe(document.body || document.documentElement, {
       childList: true,
       subtree: true
     });
