@@ -107,7 +107,7 @@ class TimelineManager {
 
     async init() {
         const elementsFound = await this.findCriticalElements();
-        if (!elementsFound) return;
+        if (!elementsFound) return false;
         
         this.injectTimelineUI();
         this.setupEventListeners();
@@ -134,6 +134,7 @@ class TimelineManager {
             }
         } catch {}
         // Initial rendering will be triggered by observers; avoid duplicate delayed re-render
+        return true;
     }
     
     async findCriticalElements() {
@@ -1454,6 +1455,8 @@ let bootstrapObserver = null;
 let routeListenersAttached = false;
 let bodyBootstrapStarted = false;
 let historyPatched = false;
+let timelineInitSequence = 0;
+let timelineInitInFlight = false;
 let timelineEnabled =
     typeof DEFAULT_SETTINGS[TIMELINE_SETTING_KEY] === "boolean"
         ? DEFAULT_SETTINGS[TIMELINE_SETTING_KEY]
@@ -1478,6 +1481,9 @@ function cleanupTimelineUi() {
 }
 
 function destroyTimeline() {
+    timelineInitSequence += 1;
+    timelineInitInFlight = false;
+
     try {
         if (initTimerId) {
             clearTimeout(initTimerId);
@@ -1508,12 +1514,48 @@ function initializeTimeline() {
         return;
     }
 
+    if (timelineInitInFlight) {
+        return;
+    }
+
     destroyTimeline();
-    disconnectBootstrapObserver();
-    timelineManagerInstance = new TimelineManager();
-    timelineManagerInstance
+    const initSequence = ++timelineInitSequence;
+    const nextManager = new TimelineManager();
+    timelineManagerInstance = nextManager;
+    timelineInitInFlight = true;
+
+    nextManager
         .init()
-        .catch((error) => console.error(`${LOG_PREFIX} 初始化失败。`, error));
+        .then((initialized) => {
+            if (initSequence !== timelineInitSequence || timelineManagerInstance !== nextManager) {
+                return;
+            }
+
+            timelineInitInFlight = false;
+
+            if (initialized) {
+                disconnectBootstrapObserver();
+                return;
+            }
+
+            timelineManagerInstance = null;
+            ensureBootstrapObserver();
+            window.setTimeout(() => {
+                if (!timelineManagerInstance && timelineEnabled && isConversationRoute()) {
+                    handleUrlChange(true);
+                }
+            }, 300);
+        })
+        .catch((error) => {
+            if (initSequence !== timelineInitSequence || timelineManagerInstance !== nextManager) {
+                return;
+            }
+
+            timelineInitInFlight = false;
+            timelineManagerInstance = null;
+            ensureBootstrapObserver();
+            console.error(`${LOG_PREFIX} 初始化失败。`, error);
+        });
 }
 
 function handleUrlChange(force = false) {
