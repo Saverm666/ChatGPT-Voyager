@@ -13,7 +13,8 @@
 
   const STORAGE_KEYS = {
     FORMULA_HISTORY: "formulaCopyHistory",
-    SAVED_PROMPTS: "savedPrompts"
+    SAVED_PROMPTS: "savedPrompts",
+    BRANCH_PROMPT_DRAFT: "branchPromptDraft"
   };
 
   const MAX_FORMULA_HISTORY_ITEMS = 30;
@@ -21,13 +22,15 @@
     formulaCopierEnabled: true,
     formulaCopyFormat: FORMULA_COPY_FORMATS.LATEX_SOURCE,
     enterEnhancerEnabled: true,
+    chatgptTimelineEnabled: true,
     notionCloseGuardEnabled: true
   };
 
   const DEFAULT_LOCAL_DATA = {
     ...DEFAULT_SETTINGS,
     [STORAGE_KEYS.FORMULA_HISTORY]: [],
-    [STORAGE_KEYS.SAVED_PROMPTS]: []
+    [STORAGE_KEYS.SAVED_PROMPTS]: [],
+    [STORAGE_KEYS.BRANCH_PROMPT_DRAFT]: null
   };
 
   function normalizeFormulaCopyFormat(value) {

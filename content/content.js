@@ -99,11 +99,84 @@ function reportScriptError(message, error) {
   console.error(message, error);
 }
 
+function waitForValue(resolveValue, options = {}) {
+  const timeoutMs =
+    typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? options.timeoutMs
+      : 3000;
+  const intervalMs =
+    typeof options.intervalMs === "number" && Number.isFinite(options.intervalMs)
+      ? options.intervalMs
+      : 60;
+  const startTime = Date.now();
+
+  return new Promise((resolve) => {
+    function check() {
+      let value = null;
+
+      try {
+        value = resolveValue();
+      } catch (error) {
+        value = null;
+      }
+
+      if (value) {
+        resolve(value);
+        return;
+      }
+
+      if (Date.now() - startTime >= timeoutMs) {
+        resolve(null);
+        return;
+      }
+
+      window.setTimeout(check, intervalMs);
+    }
+
+    check();
+  });
+}
+
+function isElementVisibleInViewport(element) {
+  if (!(element instanceof Element)) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function getClosestConversationTurnElement(node) {
+  if (!node) {
+    return null;
+  }
+
+  const element = node instanceof Element ? node : node.parentElement;
+  return element?.closest?.("[data-turn-id]") || null;
+}
+
+function getNormalizedElementText(element) {
+  if (!(element instanceof Element)) {
+    return "";
+  }
+
+  return String(
+    element.getAttribute("aria-label") ||
+      element.getAttribute("title") ||
+      element.textContent ||
+      ""
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const formulaCopierModule = (() => {
   let enabled = false;
   let copyFormat = DEFAULT_FORMULA_COPY_FORMAT;
   let selectedElement = null;
   let hoveredElement = null;
+  let pendingHoverTarget = null;
+  let hoverFrame = null;
   let selectionFlashTimer = null;
 
   function clearSelection() {
@@ -138,6 +211,19 @@ const formulaCopierModule = (() => {
 
     hoveredElement = target;
     hoveredElement.classList.add("formula-copier-hover");
+  }
+
+  function scheduleHoverUpdate(target) {
+    pendingHoverTarget = target || null;
+
+    if (hoverFrame) {
+      return;
+    }
+
+    hoverFrame = window.requestAnimationFrame(() => {
+      hoverFrame = null;
+      updateHover(pendingHoverTarget);
+    });
   }
 
   function flashSelection(target) {
@@ -391,11 +477,16 @@ const formulaCopierModule = (() => {
   }
 
   function onDocumentMouseMove(event) {
-    updateHover(findFormulaElement(event.composedPath()));
+    scheduleHoverUpdate(findFormulaElement(event.composedPath()));
   }
 
   function onDocumentMouseOut(event) {
     if (!event.relatedTarget) {
+      pendingHoverTarget = null;
+      if (hoverFrame) {
+        window.cancelAnimationFrame(hoverFrame);
+        hoverFrame = null;
+      }
       clearHover();
     }
   }
@@ -425,6 +516,11 @@ const formulaCopierModule = (() => {
       document.removeEventListener("click", onDocumentClick, true);
       document.removeEventListener("mousemove", onDocumentMouseMove, true);
       document.removeEventListener("mouseout", onDocumentMouseOut, true);
+      if (hoverFrame) {
+        window.cancelAnimationFrame(hoverFrame);
+        hoverFrame = null;
+      }
+      pendingHoverTarget = null;
       clearSelection();
       clearHover();
       clearFeedback();
@@ -438,6 +534,8 @@ const enterEnhancerModule = (() => {
   let enabled = false;
   let observer = null;
   const attachedElements = new Set();
+  const EDITABLE_SELECTOR =
+    'textarea, div[contenteditable="true"], [contenteditable="plaintext-only"]';
 
   function createKeyEvent(type, options) {
     const event = new KeyboardEvent(type, {
@@ -557,9 +655,7 @@ const enterEnhancerModule = (() => {
   }
 
   function isEditableElement(element) {
-    return element.matches(
-      'textarea, div[contenteditable="true"], [contenteditable="plaintext-only"]'
-    );
+    return element.matches(EDITABLE_SELECTOR);
   }
 
   function isElementVisible(element) {
@@ -597,15 +693,15 @@ const enterEnhancerModule = (() => {
       return;
     }
 
+    if (!root.matches(EDITABLE_SELECTOR) && !root.querySelector(EDITABLE_SELECTOR)) {
+      return;
+    }
+
     if (isEditableElement(root)) {
       attachInterceptor(root);
     }
 
-    root
-      .querySelectorAll(
-        'textarea, div[contenteditable="true"], [contenteditable="plaintext-only"]'
-      )
-      .forEach((element) => attachInterceptor(element));
+    root.querySelectorAll(EDITABLE_SELECTOR).forEach((element) => attachInterceptor(element));
   }
 
   function ensureObserver() {
@@ -619,7 +715,7 @@ const enterEnhancerModule = (() => {
       }
     });
 
-    observer.observe(document.documentElement, {
+    observer.observe(document.body || document.documentElement, {
       childList: true,
       subtree: true
     });
@@ -636,9 +732,7 @@ const enterEnhancerModule = (() => {
     }
 
     document
-      .querySelectorAll(
-        'textarea, div[contenteditable="true"], [contenteditable="plaintext-only"]'
-      )
+      .querySelectorAll(EDITABLE_SELECTOR)
       .forEach((element) => attachInterceptor(element));
 
     ensureObserver();
@@ -669,6 +763,1045 @@ const enterEnhancerModule = (() => {
 
       Array.from(attachedElements).forEach((element) => detachInterceptor(element));
       console.log(`[${SCRIPT_NAME}] Enter 增强功能已关闭。`);
+    }
+  };
+})();
+
+const branchSelectionModule = (() => {
+  const BRANCH_BUTTON_IDLE_LABEL = "分支提问";
+  const BRANCH_BUTTON_LOADING_LABEL = "分支中…";
+  const BRANCH_BUTTON_ERROR_LABEL = "重试分支";
+  const SELECTION_IDLE_DELAY_MS = 1000;
+  const BRANCH_MENU_ITEM_PATTERN =
+    /新聊天中的分支|在新聊天中分支|新聊天分支|Branch in new chat|Branch to new chat/i;
+  const TURN_MORE_ACTIONS_SELECTOR =
+    'button[aria-label="更多操作"], button[aria-label="More actions"]';
+  const COMPOSER_SELECTOR = '#prompt-textarea[contenteditable="true"]';
+
+  let enabled = false;
+  let root = null;
+  let button = null;
+  let activeSelection = null;
+  let selectionRefreshTimer = null;
+  let selectionRefreshFrame = null;
+  let actionInFlight = false;
+  let consumeInFlight = false;
+  let errorResetTimer = null;
+
+  function getRangeDisplayRect(range) {
+    if (!(range instanceof Range)) {
+      return null;
+    }
+
+    const rects = Array.from(range.getClientRects()).filter((rect) => {
+      return rect.width > 0 || rect.height > 0;
+    });
+
+    if (rects.length > 0) {
+      return rects[rects.length - 1];
+    }
+
+    const fallbackRect = range.getBoundingClientRect();
+    return fallbackRect.width > 0 || fallbackRect.height > 0 ? fallbackRect : null;
+  }
+
+  function getTextBlockRect(range, turnElement) {
+    if (!(range instanceof Range) || !(turnElement instanceof Element)) {
+      return null;
+    }
+
+    const blockSelector = [
+      "p",
+      "li",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "pre",
+      "blockquote",
+      "td",
+      "th"
+    ].join(", ");
+
+    const candidateNodes = [
+      range.startContainer,
+      range.endContainer,
+      range.commonAncestorContainer
+    ];
+
+    for (const node of candidateNodes) {
+      const element = node instanceof Element ? node : node?.parentElement;
+      const blockElement = element?.closest?.(blockSelector);
+
+      if (!(blockElement instanceof Element) || !turnElement.contains(blockElement)) {
+        continue;
+      }
+
+      const rect = blockElement.getBoundingClientRect();
+
+      if (rect.width > 0 || rect.height > 0) {
+        return rect;
+      }
+    }
+
+    const messageContainer = range.startContainer instanceof Element
+      ? range.startContainer.closest('[data-message-author-role="assistant"], .markdown')
+      : range.startContainer?.parentElement?.closest?.(
+          '[data-message-author-role="assistant"], .markdown'
+        );
+
+    if (messageContainer instanceof Element && turnElement.contains(messageContainer)) {
+      const rect = messageContainer.getBoundingClientRect();
+
+      if (rect.width > 0 || rect.height > 0) {
+        return rect;
+      }
+    }
+
+    return getRangeDisplayRect(range);
+  }
+
+  function ensureUi() {
+    if (root || !document.body) {
+      return;
+    }
+
+    root = document.createElement("div");
+    root.className = "voyager-branch-selection-root";
+    root.hidden = true;
+
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "voyager-branch-selection-button";
+    button.textContent = BRANCH_BUTTON_IDLE_LABEL;
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openSelectionInBranch().catch((error) => {
+        reportScriptError(`[${SCRIPT_NAME}] 打开分支失败。`, error);
+      });
+    });
+
+    root.appendChild(button);
+    (document.body || document.documentElement).appendChild(root);
+  }
+
+  function setButtonState(state, label) {
+    ensureUi();
+
+    if (!root || !button) {
+      return;
+    }
+
+    root.dataset.state = state;
+    button.textContent = label;
+    button.disabled = state === "loading";
+  }
+
+  function resetButtonState() {
+    if (!root || !button) {
+      return;
+    }
+
+    delete root.dataset.state;
+    button.textContent = BRANCH_BUTTON_IDLE_LABEL;
+    button.disabled = false;
+  }
+
+  function clearErrorResetTimer() {
+    if (!errorResetTimer) {
+      return;
+    }
+
+    window.clearTimeout(errorResetTimer);
+    errorResetTimer = null;
+  }
+
+  function hideUi() {
+    activeSelection = null;
+    clearErrorResetTimer();
+
+    if (!root) {
+      return;
+    }
+
+    resetButtonState();
+    root.hidden = true;
+  }
+
+  function getSelectionSnapshot() {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const selectedText = selection.toString().replace(/\u00a0/g, " ").trim();
+
+    if (!selectedText) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const startTurn = getClosestConversationTurnElement(range.startContainer);
+    const endTurn = getClosestConversationTurnElement(range.endContainer);
+
+    if (!startTurn || startTurn !== endTurn || startTurn.dataset.turn !== "assistant") {
+      return null;
+    }
+
+    const turnId = String(startTurn.dataset.turnId || "").trim();
+    const rect = getRangeDisplayRect(range);
+    const blockRect = getTextBlockRect(range, startTurn);
+
+    if (!turnId || !rect || !blockRect) {
+      return null;
+    }
+
+    return {
+      text: selectedText,
+      turnId,
+      rect,
+      blockRect,
+      turnElement: startTurn
+    };
+  }
+
+  function positionUi(snapshot) {
+    ensureUi();
+
+    if (!root || !snapshot) {
+      return;
+    }
+
+    const rootWidth = Math.max(root.offsetWidth || 0, 116);
+    const rootHeight = Math.max(root.offsetHeight || 0, 34);
+    const anchorRect = snapshot.blockRect || snapshot.rect;
+    const left = Math.max(12, anchorRect.left - rootWidth - 10);
+
+    let top = snapshot.rect.top + snapshot.rect.height / 2 - rootHeight / 2;
+    top = Math.max(12, Math.min(top, window.innerHeight - rootHeight - 12));
+
+    root.style.left = `${left}px`;
+    root.style.top = `${top}px`;
+    root.hidden = false;
+  }
+
+  function syncSelectionUi() {
+    if (!enabled || actionInFlight) {
+      return;
+    }
+
+    const snapshot = getSelectionSnapshot();
+
+    if (!snapshot) {
+      hideUi();
+      return;
+    }
+
+    activeSelection = snapshot;
+    clearErrorResetTimer();
+    resetButtonState();
+    positionUi(snapshot);
+  }
+
+  function scheduleSelectionSync() {
+    if (!enabled) {
+      return;
+    }
+
+    if (!actionInFlight) {
+      hideUi();
+    }
+
+    if (selectionRefreshTimer) {
+      window.clearTimeout(selectionRefreshTimer);
+      selectionRefreshTimer = null;
+    }
+
+    if (selectionRefreshFrame) {
+      window.cancelAnimationFrame(selectionRefreshFrame);
+      selectionRefreshFrame = null;
+    }
+
+    selectionRefreshTimer = window.setTimeout(() => {
+      selectionRefreshTimer = null;
+      selectionRefreshFrame = window.requestAnimationFrame(() => {
+        selectionRefreshFrame = null;
+        syncSelectionUi();
+      });
+    }, SELECTION_IDLE_DELAY_MS);
+  }
+
+  function findTurnMoreActionsButton(turnElement) {
+    if (!(turnElement instanceof Element)) {
+      return null;
+    }
+
+    const searchRoots = [
+      turnElement,
+      turnElement.querySelector(".group\\/turn-messages"),
+      turnElement.parentElement,
+      turnElement.closest(".group\\/turn-messages"),
+      turnElement.closest("[data-testid^='conversation-turn-']")?.parentElement
+    ].filter(Boolean);
+
+    for (const rootCandidate of searchRoots) {
+      if (!(rootCandidate instanceof Element)) {
+        continue;
+      }
+
+      const explicitButton = rootCandidate.querySelector(TURN_MORE_ACTIONS_SELECTOR);
+
+      if (explicitButton instanceof HTMLButtonElement) {
+        return explicitButton;
+      }
+
+      const actionContainer = rootCandidate.querySelector(
+        '[aria-label="回复操作"], [aria-label="Response actions"], [aria-label="Message actions"]'
+      );
+
+      if (!(actionContainer instanceof Element)) {
+        continue;
+      }
+
+      const fallbackButton = Array.from(
+        actionContainer.querySelectorAll('button[aria-haspopup="menu"]')
+      ).find((element) => element instanceof HTMLButtonElement);
+
+      if (fallbackButton instanceof HTMLButtonElement) {
+        return fallbackButton;
+      }
+    }
+
+    const allButtons = Array.from(
+      document.querySelectorAll(TURN_MORE_ACTIONS_SELECTOR)
+    ).filter((element) => element instanceof HTMLButtonElement);
+
+    return (
+      allButtons.find((element) => {
+        const buttonTurn = element.closest("[data-turn-id]");
+        return buttonTurn instanceof Element && buttonTurn === turnElement;
+      }) || null
+    );
+  }
+
+  function dispatchMouseSequence(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const eventTypes = [
+      "pointerenter",
+      "mouseenter",
+      "pointerover",
+      "mouseover",
+      "pointermove",
+      "mousemove",
+      "pointerdown",
+      "mousedown",
+      "pointerup",
+      "mouseup",
+      "click"
+    ];
+
+    eventTypes.forEach((type) => {
+      const isPointerEvent = type.startsWith("pointer");
+      const EventConstructor =
+        isPointerEvent && typeof PointerEvent === "function" ? PointerEvent : MouseEvent;
+      element.dispatchEvent(
+        new EventConstructor(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          button: 0,
+          buttons: 1,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          view: window
+        })
+      );
+    });
+  }
+
+  function revealTurnActions(turnElement, moreActionsButton) {
+    if (turnElement instanceof HTMLElement) {
+      ["pointerenter", "mouseenter", "pointermove", "mousemove", "mouseover"].forEach((type) => {
+        const EventConstructor =
+          type.startsWith("pointer") && typeof PointerEvent === "function"
+            ? PointerEvent
+            : MouseEvent;
+        turnElement.dispatchEvent(
+          new EventConstructor(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId: 1,
+            pointerType: "mouse",
+            isPrimary: true,
+            view: window
+          })
+        );
+      });
+    }
+
+    const actionsGroup = moreActionsButton?.closest(
+      '[aria-label="回复操作"], [aria-label="Response actions"], [aria-label="Message actions"]'
+    );
+
+    if (actionsGroup instanceof HTMLElement) {
+      actionsGroup.dispatchEvent(
+        new MouseEvent("mouseover", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window
+        })
+      );
+    }
+
+    if (moreActionsButton instanceof HTMLElement) {
+      moreActionsButton.focus();
+    }
+  }
+
+  async function openMenuFromButton(moreActionsButton, turnElement) {
+    if (!(moreActionsButton instanceof HTMLButtonElement)) {
+      return false;
+    }
+
+    revealTurnActions(turnElement, moreActionsButton);
+
+    if (moreActionsButton.getAttribute("aria-expanded") === "true") {
+      return true;
+    }
+
+    moreActionsButton.click();
+
+    let expandedButton = await waitForValue(() => {
+      return moreActionsButton.getAttribute("aria-expanded") === "true" ? moreActionsButton : null;
+    }, {
+      timeoutMs: 900,
+      intervalMs: 60
+    });
+
+    if (expandedButton) {
+      return true;
+    }
+
+    dispatchMouseSequence(moreActionsButton);
+
+    expandedButton = await waitForValue(() => {
+      return moreActionsButton.getAttribute("aria-expanded") === "true" ? moreActionsButton : null;
+    }, {
+      timeoutMs: 1200,
+      intervalMs: 60
+    });
+
+    return Boolean(expandedButton);
+  }
+
+  function getMenuSearchRoots() {
+    const roots = Array.from(
+      document.querySelectorAll(
+        '[role="menu"], [data-radix-popper-content-wrapper], [data-slot="dropdown-menu-content"]'
+      )
+    ).filter((element) => isElementVisibleInViewport(element));
+
+    roots.sort((left, right) => {
+      const leftIsMenu = left.getAttribute("role") === "menu" ? 0 : 1;
+      const rightIsMenu = right.getAttribute("role") === "menu" ? 0 : 1;
+      return leftIsMenu - rightIsMenu;
+    });
+
+    return roots.length > 0 ? roots : [document];
+  }
+
+  function getClickableAncestor(element, rootCandidate) {
+    if (!(element instanceof HTMLElement)) {
+      return null;
+    }
+
+    const interactiveAncestor = element.closest(
+      [
+        '[role="menuitem"]',
+        '[role="option"]',
+        "button",
+        "a[href]",
+        "[data-radix-collection-item]",
+        "[cmdk-item]"
+      ].join(", ")
+    );
+
+    if (
+      interactiveAncestor instanceof HTMLElement &&
+      (!(rootCandidate instanceof Node) || rootCandidate.contains(interactiveAncestor))
+    ) {
+      return interactiveAncestor;
+    }
+
+    return element;
+  }
+
+  function getMenuInteractiveCandidates(rootCandidate) {
+    if (
+      !rootCandidate ||
+      (typeof rootCandidate !== "object" && typeof rootCandidate !== "function") ||
+      typeof rootCandidate.querySelectorAll !== "function"
+    ) {
+      return [];
+    }
+
+    const selector = [
+      '[role="menuitem"]',
+      '[role="option"]',
+      "button",
+      "a[href]",
+      "[data-radix-collection-item]",
+      "[cmdk-item]"
+    ].join(", ");
+
+    const candidates = Array.from(rootCandidate.querySelectorAll(selector))
+      .map((element) => {
+        return getClickableAncestor(element, rootCandidate);
+      })
+      .filter((element) => {
+        return (
+          element instanceof HTMLElement &&
+          element.getClientRects().length > 0 &&
+          !root?.contains(element) &&
+          element.getAttribute("role") !== "menu" &&
+          !element.matches('[data-radix-menu-content], [data-radix-popper-content-wrapper]') &&
+          getNormalizedElementText(element)
+        );
+      });
+
+    return Array.from(new Set(candidates));
+  }
+
+  function findBranchMenuItem() {
+    const searchRoots = getMenuSearchRoots();
+
+    for (const rootCandidate of searchRoots) {
+      const candidates = getMenuInteractiveCandidates(rootCandidate);
+      const matched = candidates.find((element) => {
+        return BRANCH_MENU_ITEM_PATTERN.test(getNormalizedElementText(element));
+      });
+
+      if (matched instanceof HTMLElement) {
+        return matched;
+      }
+    }
+
+    return null;
+  }
+
+  function findFirstMenuAction() {
+    const searchRoots = getMenuSearchRoots();
+
+    for (const rootCandidate of searchRoots) {
+      const candidates = getMenuInteractiveCandidates(rootCandidate).filter((element) => {
+        return !element.className.includes("__menu-label") && Boolean(element.getAttribute("aria-label"));
+      });
+
+      if (candidates.length > 0) {
+        return candidates[0];
+      }
+    }
+
+    return null;
+  }
+
+  function isScrollableContainer(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    const computedStyle = window.getComputedStyle(element);
+    const overflowY = computedStyle.overflowY || "";
+    const overflowX = computedStyle.overflowX || "";
+    const canScrollY =
+      /(auto|scroll|overlay)/i.test(overflowY) &&
+      element.scrollHeight > element.clientHeight + 1;
+    const canScrollX =
+      /(auto|scroll|overlay)/i.test(overflowX) &&
+      element.scrollWidth > element.clientWidth + 1;
+
+    return canScrollY || canScrollX;
+  }
+
+  function captureScrollState(anchorElement) {
+    const entries = [];
+    const seen = new Set();
+    let current =
+      anchorElement instanceof Element ? anchorElement.parentElement : null;
+
+    while (current) {
+      if (isScrollableContainer(current) && !seen.has(current)) {
+        entries.push({
+          element: current,
+          top: current.scrollTop,
+          left: current.scrollLeft
+        });
+        seen.add(current);
+      }
+
+      current = current.parentElement;
+    }
+
+    entries.push({
+      element: window,
+      top: window.scrollY,
+      left: window.scrollX
+    });
+
+    return entries;
+  }
+
+  function restoreScrollState(entries) {
+    entries.forEach((entry) => {
+      if (entry.element === window) {
+        window.scrollTo(entry.left, entry.top);
+        return;
+      }
+
+      if (entry.element instanceof HTMLElement) {
+        entry.element.scrollLeft = entry.left;
+        entry.element.scrollTop = entry.top;
+      }
+    });
+  }
+
+  function scheduleScrollRestore(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return;
+    }
+
+    restoreScrollState(entries);
+    window.requestAnimationFrame(() => {
+      restoreScrollState(entries);
+    });
+    window.setTimeout(() => {
+      restoreScrollState(entries);
+    }, 120);
+  }
+
+  async function activateElement(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    element.focus();
+    element.click();
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 80);
+    });
+
+    return true;
+  }
+
+  function findComposerInput() {
+    const composer = document.querySelector(COMPOSER_SELECTOR);
+    return composer instanceof HTMLElement ? composer : null;
+  }
+
+  function getComposerPlainText(composer) {
+    if (!(composer instanceof HTMLElement)) {
+      return "";
+    }
+
+    return String(composer.innerText || composer.textContent || "")
+      .replace(/\u200b/g, "")
+      .trim();
+  }
+
+  function normalizeComparableText(text) {
+    return String(text || "")
+      .replace(/\u200b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function composerContainsText(text, composer = findComposerInput()) {
+    if (!(composer instanceof HTMLElement)) {
+      return false;
+    }
+
+    const normalizedTarget = normalizeComparableText(text);
+
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    return normalizeComparableText(getComposerPlainText(composer)).includes(
+      normalizedTarget
+    );
+  }
+
+  function selectElementContents(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+
+    const selection = window.getSelection();
+
+    if (!selection) {
+      return false;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }
+
+  function placeCaretAtEnd(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const selection = window.getSelection();
+
+    if (!selection) {
+      return;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function applyTextFallback(composer, text) {
+    if (!(composer instanceof HTMLElement)) {
+      return;
+    }
+
+    const lines = String(text || "").split(/\r?\n/);
+    composer.replaceChildren();
+
+    if (lines.length === 0) {
+      const paragraph = document.createElement("p");
+      const trailingBreak = document.createElement("br");
+      trailingBreak.className = "ProseMirror-trailingBreak";
+      paragraph.appendChild(trailingBreak);
+      composer.appendChild(paragraph);
+      return;
+    }
+
+    lines.forEach((line) => {
+      const paragraph = document.createElement("p");
+
+      if (line) {
+        paragraph.textContent = line;
+      } else {
+        const trailingBreak = document.createElement("br");
+        trailingBreak.className = "ProseMirror-trailingBreak";
+        paragraph.appendChild(trailingBreak);
+      }
+
+      composer.appendChild(paragraph);
+    });
+  }
+
+  async function insertTextIntoComposer(composer, text) {
+    if (!(composer instanceof HTMLElement)) {
+      return false;
+    }
+
+    const draftText = String(text || "").trim();
+
+    if (!draftText) {
+      return false;
+    }
+
+    if (composerContainsText(draftText, composer)) {
+      return true;
+    }
+
+    const nextText = draftText;
+
+    composer.focus();
+    selectElementContents(composer);
+
+    const beforeInputEvent = new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertText",
+      data: nextText
+    });
+    composer.dispatchEvent(beforeInputEvent);
+
+    let inserted = false;
+
+    try {
+      inserted = document.execCommand("insertText", false, nextText);
+    } catch (error) {
+      inserted = false;
+    }
+
+    if (!inserted) {
+      applyTextFallback(composer, nextText);
+    }
+
+    composer.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: nextText
+      })
+    );
+    placeCaretAtEnd(composer);
+
+    if (composerContainsText(draftText, composer)) {
+      return true;
+    }
+
+    const confirmed = await waitForValue(() => {
+      return composerContainsText(draftText) ? true : null;
+    }, {
+      timeoutMs: 1500,
+      intervalMs: 80
+    });
+
+    return Boolean(confirmed);
+  }
+
+  async function consumePendingBranchDraft() {
+    if (!enabled || !extensionContextAvailable || consumeInFlight || !isChatGPTPage) {
+      return;
+    }
+
+    consumeInFlight = true;
+
+    try {
+      const result = await sendRuntimeMessage({
+        type: "CONSUME_BRANCH_PROMPT_DRAFT",
+        pathname: window.location.pathname,
+        referrer: document.referrer
+      });
+
+      if (!result?.ok || !result.draft?.text) {
+        return;
+      }
+
+      const composer = await waitForValue(() => findComposerInput(), {
+        timeoutMs: 15000,
+        intervalMs: 100
+      });
+
+      if (!composer) {
+        throw new Error("没有找到分支聊天输入框。");
+      }
+
+      if (composerContainsText(result.draft.text, composer)) {
+        return;
+      }
+
+      const inserted = await insertTextIntoComposer(composer, result.draft.text);
+
+      if (!inserted) {
+        throw new Error("未能把选中文本写入分支聊天输入框。");
+      }
+    } catch (error) {
+      markExtensionContextInvalidated(error);
+      reportScriptError(`[${SCRIPT_NAME}] 自动填充分支聊天失败。`, error);
+    } finally {
+      consumeInFlight = false;
+    }
+  }
+
+  async function openSelectionInBranch() {
+    if (actionInFlight || !activeSelection) {
+      return;
+    }
+
+    const snapshot = activeSelection;
+    let draftCreated = false;
+    let failed = false;
+
+    actionInFlight = true;
+    setButtonState("loading", BRANCH_BUTTON_LOADING_LABEL);
+
+    try {
+      const scrollState = captureScrollState(snapshot.turnElement);
+      const moreActionsButton = await waitForValue(
+        () => findTurnMoreActionsButton(snapshot.turnElement),
+        {
+          timeoutMs: 2000,
+          intervalMs: 80
+        }
+      );
+
+      if (!moreActionsButton) {
+        throw new Error("没有找到当前回复对应的“更多操作”按钮。");
+      }
+
+      const menuOpened = await openMenuFromButton(moreActionsButton, snapshot.turnElement);
+
+      if (!menuOpened) {
+        throw new Error("没有成功打开当前回复的操作菜单。");
+      }
+
+      const branchMenuItem = await waitForValue(() => findBranchMenuItem(), {
+        timeoutMs: 5000,
+        intervalMs: 80
+      });
+
+      const saveDraftPromise = sendRuntimeMessage({
+        type: "CREATE_BRANCH_PROMPT_DRAFT",
+        text: snapshot.text,
+        sourceTurnId: snapshot.turnId,
+        sourcePath: window.location.pathname
+      });
+
+      draftCreated = true;
+      const targetMenuItem = branchMenuItem || findFirstMenuAction();
+
+      if (!targetMenuItem) {
+        throw new Error("没有找到“新聊天中的分支”菜单项。");
+      }
+
+      if (!branchMenuItem) {
+        console.warn(
+          `[${SCRIPT_NAME}] 未匹配到“新聊天中的分支”文本，已回退到菜单第一项。`,
+          targetMenuItem
+        );
+      }
+
+      await activateElement(targetMenuItem);
+      scheduleScrollRestore(scrollState);
+      const saveResult = await saveDraftPromise;
+
+      if (!saveResult?.ok) {
+        throw new Error(saveResult?.error || "保存分支草稿失败。");
+      }
+
+      hideUi();
+    } catch (error) {
+      failed = true;
+
+      if (draftCreated) {
+        await sendRuntimeMessage({
+          type: "CLEAR_BRANCH_PROMPT_DRAFT"
+        });
+      }
+
+      reportScriptError(`[${SCRIPT_NAME}] 打开分支失败。`, error);
+      setButtonState("error", BRANCH_BUTTON_ERROR_LABEL);
+      errorResetTimer = window.setTimeout(() => {
+        errorResetTimer = null;
+        actionInFlight = false;
+        scheduleSelectionSync();
+      }, 1400);
+    } finally {
+      if (!failed) {
+        actionInFlight = false;
+      }
+    }
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState !== "visible") {
+      return;
+    }
+
+    scheduleSelectionSync();
+    consumePendingBranchDraft().catch((error) => {
+      reportScriptError(`[${SCRIPT_NAME}] 恢复分支草稿失败。`, error);
+    });
+  }
+
+  function handleDocumentMouseDown(event) {
+    if (root && event.target instanceof Node && root.contains(event.target)) {
+      return;
+    }
+
+    if (!actionInFlight) {
+      hideUi();
+    }
+  }
+
+  function handleSelectionViewportChange() {
+    if (!enabled) {
+      return;
+    }
+
+    if (!activeSelection && (!root || root.hidden)) {
+      return;
+    }
+
+    scheduleSelectionSync();
+  }
+
+  return {
+    enable() {
+      if (enabled || !isChatGPTPage) {
+        return;
+      }
+
+      enabled = true;
+      ensureUi();
+      document.addEventListener("selectionchange", scheduleSelectionSync, true);
+      document.addEventListener("mouseup", scheduleSelectionSync, true);
+      document.addEventListener("keyup", scheduleSelectionSync, true);
+      document.addEventListener("mousedown", handleDocumentMouseDown, true);
+      window.addEventListener("resize", handleSelectionViewportChange);
+      window.addEventListener("scroll", handleSelectionViewportChange, true);
+      window.addEventListener("pageshow", handleVisibilityChange);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      scheduleSelectionSync();
+      consumePendingBranchDraft().catch((error) => {
+        reportScriptError(`[${SCRIPT_NAME}] 初始化分支草稿失败。`, error);
+      });
+    },
+
+    disable() {
+      if (!enabled) {
+        return;
+      }
+
+      enabled = false;
+      clearErrorResetTimer();
+
+      if (selectionRefreshFrame) {
+        window.cancelAnimationFrame(selectionRefreshFrame);
+        selectionRefreshFrame = null;
+      }
+
+      if (selectionRefreshTimer) {
+        window.clearTimeout(selectionRefreshTimer);
+        selectionRefreshTimer = null;
+      }
+
+      document.removeEventListener("selectionchange", scheduleSelectionSync, true);
+      document.removeEventListener("mouseup", scheduleSelectionSync, true);
+      document.removeEventListener("keyup", scheduleSelectionSync, true);
+      document.removeEventListener("mousedown", handleDocumentMouseDown, true);
+      window.removeEventListener("resize", handleSelectionViewportChange);
+      window.removeEventListener("scroll", handleSelectionViewportChange, true);
+      window.removeEventListener("pageshow", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      if (root) {
+        root.remove();
+        root = null;
+        button = null;
+      }
+
+      activeSelection = null;
+      actionInFlight = false;
+      consumeInFlight = false;
     }
   };
 })();
@@ -726,13 +1859,25 @@ const chatgptHeaderEntryModule = (() => {
   let statusElement = null;
   let mountObserver = null;
   let mountFrame = null;
+  let viewportFrame = null;
   let statusTimer = null;
   let panelOpen = false;
   let editingPromptId = "";
+  let lastRootTopPx = "";
+  let lastRootLeftPx = "";
+  let lastRootEntryHeightPx = "";
   let cachedPrompts = [];
   let cachedHistory = [];
   let normalizedPromptSeed = 0;
   let normalizedHistorySeed = 0;
+  const HEADER_SHARE_BUTTON_SELECTOR =
+    "button[aria-label*='分享'], button[aria-label*='Share'], button[data-testid='share-chat-button']";
+  const HEADER_MOUNT_TRIGGER_SELECTOR = [
+    "#conversation-header-actions",
+    "[data-testid='model-switcher-dropdown-button']",
+    HEADER_SHARE_BUTTON_SELECTOR,
+    "[data-turn-id]"
+  ].join(", ");
 
   function setStatus(message) {
     if (!statusElement) {
@@ -1004,54 +2149,41 @@ const chatgptHeaderEntryModule = (() => {
   }
 
   function findHeaderAnchor() {
-    const headings = Array.from(
-      document.querySelectorAll("main h1, header h1")
-    )
-      .filter((element) => {
-        if (isManagedElement(element)) {
-          return false;
-        }
+    const modelSwitcher = document.querySelector(
+      "[data-testid='model-switcher-dropdown-button']"
+    );
 
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top < 180;
-      })
-      .sort((left, right) => {
-        return left.getBoundingClientRect().top - right.getBoundingClientRect().top;
-      });
+    if (
+      modelSwitcher instanceof Element &&
+      !isManagedElement(modelSwitcher) &&
+      isElementVisible(modelSwitcher)
+    ) {
+      const rect = modelSwitcher.getBoundingClientRect();
 
-    if (headings.length > 0) {
-      return headings[0];
+      if (rect.top >= 0 && rect.top < 140) {
+        return modelSwitcher;
+      }
     }
-
-    const topButtons = Array.from(
-      document.querySelectorAll("main button, header button")
-    )
-      .filter((element) => {
-        if (isManagedElement(element)) {
-          return false;
-        }
-
-        const rect = element.getBoundingClientRect();
-        const text = element.textContent.trim();
-        return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top < 180 && text;
-      })
-      .sort((left, right) => {
-        return left.getBoundingClientRect().top - right.getBoundingClientRect().top;
-      });
-
-    return topButtons.find((element) => /chatgpt|gpt/i.test(element.textContent)) || null;
+    return null;
   }
 
   function findTopRightActionAnchor() {
     const actionContainer = findConversationHeaderActionsContainer();
+    const searchRoots = [actionContainer, document];
 
-    if (
-      actionContainer instanceof Element &&
-      !isManagedElement(actionContainer) &&
-      isElementVisible(actionContainer)
-    ) {
-      const explicitShareButton = actionContainer.querySelector(
-        "button[aria-label*='分享'], button[aria-label*='Share'], button[data-testid='share-chat-button']"
+    for (const searchRoot of searchRoots) {
+      if (
+        searchRoot &&
+        !(searchRoot instanceof Document) &&
+        (!(searchRoot instanceof Element) ||
+          isManagedElement(searchRoot) ||
+          !isElementVisible(searchRoot))
+      ) {
+        continue;
+      }
+
+      const explicitShareButton = searchRoot?.querySelector?.(
+        HEADER_SHARE_BUTTON_SELECTOR
       );
 
       if (
@@ -1059,94 +2191,15 @@ const chatgptHeaderEntryModule = (() => {
         !isManagedElement(explicitShareButton) &&
         isElementVisible(explicitShareButton)
       ) {
-        return explicitShareButton;
+        const rect = explicitShareButton.getBoundingClientRect();
+
+        if (rect.top >= 0 && rect.top < 180) {
+          return explicitShareButton;
+        }
       }
     }
 
-    const candidates = Array.from(
-      document.querySelectorAll(
-        "button, a[href], summary, [role='button'], [role='link']"
-      )
-    )
-      .filter((element) => {
-        if (isManagedElement(element) || !isElementVisible(element)) {
-          return false;
-        }
-
-        const rect = element.getBoundingClientRect();
-        const text = element.textContent.trim();
-        const label =
-          element.getAttribute("aria-label") ||
-          element.getAttribute("title") ||
-          "";
-
-        return (
-          rect.top >= 0 &&
-          rect.top < 180 &&
-          (text || label)
-        );
-      })
-      .sort((left, right) => {
-        const leftRect = left.getBoundingClientRect();
-        const rightRect = right.getBoundingClientRect();
-
-        if (leftRect.top !== rightRect.top) {
-          return leftRect.top - rightRect.top;
-        }
-
-        return leftRect.left - rightRect.left;
-      });
-
-    const explicitShareButton = candidates.find((element) => {
-      const text = element.textContent.trim();
-      const label =
-        element.getAttribute("aria-label") ||
-        element.getAttribute("title") ||
-        "";
-      return /分享|share/i.test(`${text} ${label}`);
-    });
-
-    if (explicitShareButton) {
-      return explicitShareButton;
-    }
-
-    const topRightCandidates = candidates
-      .map((element) => {
-        return {
-          element,
-          rect: element.getBoundingClientRect()
-        };
-      })
-      .filter(({ rect }) => {
-        return (
-          rect.left > window.innerWidth * 0.58 &&
-          rect.right > window.innerWidth * 0.72 &&
-          rect.width >= 24 &&
-          rect.height >= 24
-        );
-      });
-
-    if (topRightCandidates.length === 0) {
-      return null;
-    }
-
-    const topRow = Math.min(...topRightCandidates.map(({ rect }) => rect.top));
-    const sameRowCandidates = topRightCandidates
-      .filter(({ rect }) => Math.abs(rect.top - topRow) < 24)
-      .sort((left, right) => left.rect.left - right.rect.left);
-
-    if (sameRowCandidates.length > 0) {
-      return sameRowCandidates[0].element;
-    }
-
-    return candidates.find((element) => {
-        const text = element.textContent.trim();
-        const label =
-          element.getAttribute("aria-label") ||
-          element.getAttribute("title") ||
-        "";
-        return /分享|share/i.test(`${text} ${label}`);
-      }) || null;
+    return null;
   }
 
   function findConversationHeaderRow() {
@@ -1205,68 +2258,73 @@ const chatgptHeaderEntryModule = (() => {
       parent.appendChild(root);
     }
 
-    const actionContainer = findConversationHeaderActionsContainer();
     const actionAnchor = findTopRightActionAnchor();
-    const headerRow = findConversationHeaderRow();
 
     if (actionAnchor) {
       const actionRect = actionAnchor.getBoundingClientRect();
-      const actionHeight = Math.max(32, Math.round(actionRect.height));
-      root.style.setProperty("--voyager-gpt-entry-height", `${actionHeight}px`);
+      const actionHeightPx = `${Math.max(32, Math.round(actionRect.height))}px`;
+
+      if (actionHeightPx !== lastRootEntryHeightPx) {
+        root.style.setProperty("--voyager-gpt-entry-height", actionHeightPx);
+        lastRootEntryHeightPx = actionHeightPx;
+      }
     } else {
-      root.style.removeProperty("--voyager-gpt-entry-height");
+      if (lastRootEntryHeightPx) {
+        root.style.removeProperty("--voyager-gpt-entry-height");
+        lastRootEntryHeightPx = "";
+      }
     }
 
     root.classList.remove("voyager-gpt-entry-root-inline");
 
     const titleAnchor = findHeaderAnchor();
-    const actionTarget = actionContainer || actionAnchor;
-    const target = actionTarget || titleAnchor;
     const measuredRect = button?.getBoundingClientRect() || root.getBoundingClientRect();
-    const rootWidth = Math.max(measuredRect.width || 0, 136);
-    const rootHeight = Math.max(measuredRect.height || 0, 36);
-    let top = 16;
-    let left = Math.max(12, window.innerWidth - rootWidth - 160);
+    const rootWidth = Math.max(
+      button?.offsetWidth || root.offsetWidth || Math.ceil(measuredRect.width) || 0,
+      136
+    );
+    const rootHeight = Math.max(
+      button?.offsetHeight || root.offsetHeight || Math.ceil(measuredRect.height) || 0,
+      36
+    );
+    let top = 14;
+    let left = window.innerWidth - rootWidth - 64;
 
-    if (target) {
-      const rect = target.getBoundingClientRect();
-
-      if (actionTarget) {
-        const alignmentRect =
-          actionAnchor?.getBoundingClientRect() ||
-          actionContainer?.getBoundingClientRect() ||
-          headerRow?.getBoundingClientRect() ||
-          rect;
-        top = Math.max(
-          10,
-          Math.min(
-            window.innerHeight - rootHeight - 10,
-            alignmentRect.top + (alignmentRect.height - rootHeight) / 2
-          )
-        );
-        left = rect.left - rootWidth - 8;
-
-        if (left < 12) {
-          left = Math.max(12, window.innerWidth - rootWidth - 12);
-        }
-      } else {
-        top = Math.max(
-          10,
-          Math.min(
-            window.innerHeight - rootHeight - 10,
-            rect.top + (rect.height - rootHeight) / 2
-          )
-        );
-        left = rect.right + 12;
-
-        if (left + rootWidth > window.innerWidth - 12) {
-          left = Math.max(12, rect.left - rootWidth - 12);
-        }
-      }
+    if (actionAnchor) {
+      const rect = actionAnchor.getBoundingClientRect();
+      top = Math.max(
+        10,
+        Math.min(
+          window.innerHeight - rootHeight - 10,
+          rect.top + (rect.height - rootHeight) / 2
+        )
+      );
+      left = rect.left - rootWidth - 10;
+    } else if (titleAnchor) {
+      const rect = titleAnchor.getBoundingClientRect();
+      top = Math.max(
+        10,
+        Math.min(
+          window.innerHeight - rootHeight - 10,
+          rect.top + (rect.height - rootHeight) / 2
+        )
+      );
     }
 
-    root.style.top = `${Math.max(10, top)}px`;
-    root.style.left = `${Math.max(12, Math.min(left, window.innerWidth - rootWidth - 12))}px`;
+    const nextTopPx = `${Math.round(Math.max(10, top))}px`;
+    const nextLeftPx = `${Math.round(
+      Math.max(12, Math.min(left, window.innerWidth - rootWidth - 12))
+    )}px`;
+
+    if (nextTopPx !== lastRootTopPx) {
+      root.style.top = nextTopPx;
+      lastRootTopPx = nextTopPx;
+    }
+
+    if (nextLeftPx !== lastRootLeftPx) {
+      root.style.left = nextLeftPx;
+      lastRootLeftPx = nextLeftPx;
+    }
   }
 
   function ensureButton() {
@@ -1276,6 +2334,9 @@ const chatgptHeaderEntryModule = (() => {
       return;
     }
 
+    lastRootTopPx = "";
+    lastRootLeftPx = "";
+    lastRootEntryHeightPx = "";
     root = document.createElement("div");
     root.className = "voyager-gpt-entry-root";
 
@@ -1370,7 +2431,17 @@ const chatgptHeaderEntryModule = (() => {
   function ensurePanel() {
     cleanupStaleUi();
 
+    const parent = document.body || document.documentElement;
+
     if (panel) {
+      if (parent && !panel.isConnected) {
+        parent.appendChild(panel);
+      }
+
+      if (promptEditorOverlay && parent && !promptEditorOverlay.isConnected) {
+        parent.appendChild(promptEditorOverlay);
+      }
+
       return;
     }
 
@@ -1631,8 +2702,8 @@ const chatgptHeaderEntryModule = (() => {
     panel.appendChild(historySection.section);
     panel.appendChild(footer);
 
-    (document.body || document.documentElement).appendChild(panel);
-    (document.body || document.documentElement).appendChild(promptEditorOverlay);
+    parent.appendChild(panel);
+    parent.appendChild(promptEditorOverlay);
   }
 
   function renderPromptList() {
@@ -1803,10 +2874,11 @@ const chatgptHeaderEntryModule = (() => {
     }
 
     const rect = button.getBoundingClientRect();
-    const panelWidth = 360;
+    const panelWidth = Math.max(320, panel.offsetWidth || 360);
+    const panelRightGap = 42;
     const left = Math.min(
       Math.max(12, rect.left),
-      Math.max(12, window.innerWidth - panelWidth - 12)
+      Math.max(12, window.innerWidth - panelWidth - panelRightGap)
     );
 
     panel.style.top = `${Math.min(window.innerHeight - 24, rect.bottom + 10)}px`;
@@ -1866,12 +2938,57 @@ const chatgptHeaderEntryModule = (() => {
     });
   }
 
-  function handleViewportChange() {
-    positionRoot();
-
-    if (panelOpen) {
-      positionPanel();
+  function nodeMatchesHeaderMountTrigger(node) {
+    if (!(node instanceof Element)) {
+      return false;
     }
+
+    if (node.matches(HEADER_MOUNT_TRIGGER_SELECTOR)) {
+      return true;
+    }
+
+    return Boolean(node.querySelector(HEADER_MOUNT_TRIGGER_SELECTOR));
+  }
+
+  function shouldScheduleMountFromMutations(mutations) {
+    for (const mutation of mutations) {
+      if (nodeMatchesHeaderMountTrigger(mutation.target)) {
+        return true;
+      }
+
+      for (const node of mutation.addedNodes) {
+        if (nodeMatchesHeaderMountTrigger(node)) {
+          return true;
+        }
+      }
+
+      for (const node of mutation.removedNodes) {
+        if (nodeMatchesHeaderMountTrigger(node)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function scheduleViewportSync() {
+    if (viewportFrame) {
+      return;
+    }
+
+    viewportFrame = window.requestAnimationFrame(() => {
+      viewportFrame = null;
+      positionRoot();
+
+      if (panelOpen) {
+        positionPanel();
+      }
+    });
+  }
+
+  function handleViewportChange() {
+    scheduleViewportSync();
   }
 
   function handleDocumentClick(event) {
@@ -1908,7 +3025,11 @@ const chatgptHeaderEntryModule = (() => {
       return;
     }
 
-    mountObserver = new MutationObserver(() => {
+    mountObserver = new MutationObserver((mutations) => {
+      if (!shouldScheduleMountFromMutations(mutations)) {
+        return;
+      }
+
       scheduleMount();
     });
 
@@ -1955,6 +3076,11 @@ const chatgptHeaderEntryModule = (() => {
         mountFrame = null;
       }
 
+      if (viewportFrame) {
+        window.cancelAnimationFrame(viewportFrame);
+        viewportFrame = null;
+      }
+
       document.removeEventListener("click", handleDocumentClick, true);
       document.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("resize", handleViewportChange);
@@ -1964,6 +3090,9 @@ const chatgptHeaderEntryModule = (() => {
         root.remove();
         root = null;
         button = null;
+        lastRootTopPx = "";
+        lastRootLeftPx = "";
+        lastRootEntryHeightPx = "";
       }
 
       if (panel) {
@@ -1996,6 +3125,7 @@ const chatgptHeaderEntryModule = (() => {
 })();
 
 handleExtensionContextInvalidated = () => {
+  branchSelectionModule.disable();
   chatgptHeaderEntryModule.disable();
 };
 
@@ -2003,6 +3133,7 @@ function getFeatureSupportSummary() {
   return {
     siteName: isChatGPTPage ? "ChatGPT" : isNotionPage ? "Notion" : null,
     formulaCopierSupported: isChatGPTPage,
+    conversationTimelineSupported: isChatGPTPage,
     enterEnhancerSupported: isChatGPTPage,
     notionCloseGuardSupported: isNotionPage
   };
@@ -2010,6 +3141,7 @@ function getFeatureSupportSummary() {
 
 function applySettings(settings) {
   if (isChatGPTPage) {
+    branchSelectionModule.enable();
     chatgptHeaderEntryModule.enable();
   }
 

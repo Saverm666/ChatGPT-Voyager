@@ -18,6 +18,7 @@ const formulaCopyFormatInputs = document.querySelectorAll(
   'input[name="formulaCopyFormat"]'
 );
 const enterEnhancerInput = document.getElementById("enter-enhancer-enabled");
+const chatgptTimelineInput = document.getElementById("chatgpt-timeline-enabled");
 const notionCloseGuardInput = document.getElementById(
   "notion-close-guard-enabled"
 );
@@ -250,6 +251,7 @@ async function loadSettings() {
   });
 
   enterEnhancerInput.checked = Boolean(settings.enterEnhancerEnabled);
+  chatgptTimelineInput.checked = Boolean(settings.chatgptTimelineEnabled);
   notionCloseGuardInput.checked = Boolean(settings.notionCloseGuardEnabled);
   renderFormulaHistory(history);
   renderSavedPrompts(settings[STORAGE_KEYS.SAVED_PROMPTS]);
@@ -273,6 +275,7 @@ settingsForm.addEventListener("submit", async (event) => {
     formulaCopierEnabled: formulaCopierInput.checked,
     formulaCopyFormat,
     enterEnhancerEnabled: enterEnhancerInput.checked,
+    chatgptTimelineEnabled: chatgptTimelineInput.checked,
     notionCloseGuardEnabled: notionCloseGuardInput.checked
   });
 
@@ -400,6 +403,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     "formulaCopierEnabled" in changes ||
     "formulaCopyFormat" in changes ||
     "enterEnhancerEnabled" in changes ||
+    "chatgptTimelineEnabled" in changes ||
     "notionCloseGuardEnabled" in changes ||
     STORAGE_KEYS.FORMULA_HISTORY in changes ||
     STORAGE_KEYS.SAVED_PROMPTS in changes

@@ -5,6 +5,7 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 它的目标很直接：
 
 - 在 ChatGPT 页面里更顺手地复制公式
+- 在长对话里通过时间线快速定位和跳转消息
 - 把常用提示词收纳起来，随时一键复用
 - 调整输入行为，让 `Enter` / `Ctrl+Enter` 更符合写长内容时的习惯
 - 在 Notion 页面离开、刷新或关闭前给出确认
@@ -14,6 +15,7 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 ## 适合谁
 
 - 经常在 ChatGPT 中阅读或整理数学公式、技术公式的人
+- 经常处理很长的 ChatGPT 对话，需要快速跳转到历史消息的人
 - 需要反复复用固定提示词的人
 - 希望把 ChatGPT 输入框行为调整成“`Enter` 换行、`Ctrl+Enter` 发送”的人
 - 使用 Notion 时担心误关闭页面的人
@@ -45,6 +47,10 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
   - 单独 `Enter` 用于换行
   - `Ctrl+Enter` 用于发送
   - 适合长提示词、多段文本和代码输入场景
+- GPT 会话时间线
+  - 在 ChatGPT 对话右侧显示用户消息时间线
+  - 点击节点即可跳转到对应轮次
+  - 长按节点可对消息加星标，便于回看重点内容
 
 ### Notion 页面
 
@@ -63,7 +69,7 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 
 说明：
 
-- ChatGPT 页面支持公式复制、提示词入口与 `Enter / Ctrl+Enter` 增强
+- ChatGPT 页面支持公式复制、GPT 会话时间线、提示词入口与 `Enter / Ctrl+Enter` 增强
 - Notion 页面支持离开确认
 - 其他站点默认不会注入这些功能
 
@@ -110,7 +116,15 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 - `UnicodeMath (Word)`
 - `LaTeX (纯文本，无 $ 符号)`
 
-### 3. 使用页内快捷入口
+### 3. 使用 GPT 会话时间线
+
+在 ChatGPT 对话页右侧会显示一条时间线。你可以：
+
+- 点击节点跳转到对应用户消息
+- 观察当前滚动位置对应的高亮节点
+- 长按节点给当前消息加星或取消星标
+
+### 4. 使用页内快捷入口
 
 在 ChatGPT 页面顶部会出现 `ChatGPT-Voyager` 按钮。点击后可以：
 
@@ -120,7 +134,7 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 - 新建、编辑、删除提示词
 - 跳转到完整设置页
 
-### 4. 使用 Popup 快速操作
+### 5. 使用 Popup 快速操作
 
 点击扩展图标后可以直接完成这些操作：
 
@@ -131,13 +145,14 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 - 从收藏列表中复制提示词
 - 打开完整设置页
 
-### 5. 使用设置页做集中管理
+### 6. 使用设置页做集中管理
 
 设置页适合做较完整的配置维护，包括：
 
 - 管理提示词收藏
 - 查看和清空公式历史
 - 保存全局功能开关
+- 打开或关闭 GPT 会话时间线
 - 调整默认公式复制格式
 
 ## 数据与权限说明
@@ -157,6 +172,7 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 - 不依赖自建后端
 - 项目代码本身不要求登录额外账号
 - 提示词、历史记录和设置数据保存在 `chrome.storage.local`
+- GPT 时间线星标默认按对话存放在 ChatGPT 站点的 `localStorage`
 
 ## 项目结构
 
@@ -168,7 +184,9 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 │   └── service-worker.js
 ├── content/
 │   ├── content.css
-│   └── content.js
+│   ├── content.js
+│   ├── timeline.css
+│   └── timeline.js
 ├── icons/
 │   ├── icon16.png
 │   ├── icon32.png
@@ -184,6 +202,8 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 │   └── popup.js
 ├── shared/
 │   └── shared.js
+├── references/
+│   └── chatgpt-conversation-timeline/
 └── vendor/
     ├── katex/
     └── tex-to-unicode/
@@ -209,6 +229,16 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 - ChatGPT 输入增强
 - Notion 离开确认
 - ChatGPT 页内快捷入口与浮层面板
+
+### `content/timeline.js`
+
+- GPT 会话时间线逻辑
+- 负责消息节点识别、滚动同步、跳转和星标持久化
+
+### `content/timeline.css`
+
+- GPT 会话时间线样式
+- 包含节点、提示浮层和滚动滑块视觉定义
 
 ### `shared/shared.js`
 
@@ -250,6 +280,8 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 - `content/content.js`
   - 继续细化 ChatGPT DOM 适配逻辑
   - 扩展支持站点或增强页内入口
+- `content/timeline.js`
+  - 调整时间线节点识别、跳转和星标行为
 - `popup/popup.js`
   - 增加更多快捷操作和状态展示
 - `options/options.js`
@@ -260,6 +292,7 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 ## 已知限制
 
 - 公式识别和页内按钮挂载依赖目标站点当前 DOM 结构；如果 ChatGPT 页面结构变化，可能需要同步调整选择器或挂载策略
+- GPT 时间线同样依赖 ChatGPT 当前对话 DOM 结构；若页面结构调整，可能需要同步更新节点选择器
 - `UnicodeMath (Word)` 转换依赖内置转换器，并非所有 LaTeX 宏都能完整覆盖
 - Notion 离开确认依赖浏览器 `beforeunload` 机制，体验会受浏览器策略限制
 - 当前支持站点范围有明确边界，并不会自动注入所有 AI 聊天网站
@@ -273,6 +306,9 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
   - 用于本地 LaTeX -> UnicodeMath 转换
   - 相关文件位于 `vendor/tex-to-unicode/`
   - 许可证见 `vendor/tex-to-unicode/LICENSE`
+- `chatgpt-conversation-timeline`
+  - 用作 GPT 时间线功能的参考实现
+  - 参考仓库位于 `references/chatgpt-conversation-timeline/`
 
 ## 后续可扩展方向
 

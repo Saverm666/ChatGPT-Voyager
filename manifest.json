@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT-Voyager",
-  "description": "Copy ChatGPT formulas, keep formula history, save prompts, and show leave confirmation on Notion.",
-  "version": "0.6.1",
+  "description": "Copy ChatGPT formulas, browse conversation timelines, keep formula history, save prompts, and show leave confirmation on Notion.",
+  "version": "0.7.0",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -40,7 +40,24 @@
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://chat.openai.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "shared/shared.js",
+        "vendor/tex-to-unicode/tex-to-unicodemath.ascii.js",
+        "vendor/katex/katex.min.js",
+        "content/timeline.js",
+        "content/content.js"
+      ],
+      "css": [
+        "vendor/katex/katex.min.css",
+        "content/content.css",
+        "content/timeline.css"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
         "https://notion.so/*",
         "https://www.notion.so/*",
         "https://*.notion.so/*",
@@ -48,11 +65,11 @@
       ],
       "js": [
         "shared/shared.js",
-        "vendor/tex-to-unicode/tex-to-unicodemath.ascii.js",
-        "vendor/katex/katex.min.js",
         "content/content.js"
       ],
-      "css": ["vendor/katex/katex.min.css", "content/content.css"],
+      "css": [
+        "content/content.css"
+      ],
       "run_at": "document_start"
     }
   ]

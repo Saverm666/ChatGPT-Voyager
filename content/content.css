@@ -26,6 +26,69 @@
   transform: translateY(0);
 }
 
+.voyager-branch-selection-root {
+  position: fixed;
+  z-index: 2147483647;
+  pointer-events: auto;
+}
+
+.voyager-branch-selection-root[hidden] {
+  display: none;
+}
+
+.voyager-branch-selection-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(0, 0, 0, 0.86);
+  box-shadow:
+    0 12px 30px rgba(15, 23, 42, 0.14),
+    0 2px 8px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+  font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.voyager-branch-selection-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.16),
+    0 4px 10px rgba(15, 23, 42, 0.1);
+}
+
+.voyager-branch-selection-button:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.82);
+  outline-offset: 2px;
+}
+
+.voyager-branch-selection-button:disabled {
+  cursor: progress;
+  opacity: 0.92;
+}
+
+.voyager-branch-selection-root[data-state="loading"] .voyager-branch-selection-button {
+  background: rgba(0, 0, 0, 0.92);
+  color: #ffffff;
+}
+
+.voyager-branch-selection-root[data-state="error"] .voyager-branch-selection-button {
+  background: rgba(255, 244, 244, 0.96);
+  color: #8b1e1e;
+}
+
 .voyager-gpt-entry-root {
   position: fixed;
   z-index: 2147483645;
@@ -512,6 +575,29 @@
 html.dark .voyager-gpt-entry-button {
   background: transparent;
   color: #ffffff;
+}
+
+html.dark .voyager-branch-selection-button {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(32, 33, 35, 0.96);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.34),
+    0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .voyager-branch-selection-button:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.92);
+}
+
+html.dark .voyager-branch-selection-root[data-state="loading"] .voyager-branch-selection-button {
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(0, 0, 0, 0.88);
+}
+
+html.dark .voyager-branch-selection-root[data-state="error"] .voyager-branch-selection-button {
+  background: rgba(81, 26, 26, 0.96);
+  color: rgba(255, 230, 230, 0.96);
 }
 
 html.dark .voyager-gpt-entry-button:hover {

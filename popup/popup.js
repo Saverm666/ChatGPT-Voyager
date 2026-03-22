@@ -20,6 +20,7 @@ const formulaCopyFormatInputs = document.querySelectorAll(
   'input[name="formula-copy-format"]'
 );
 const enterEnhancerToggle = document.getElementById("enter-enhancer-enabled");
+const chatgptTimelineToggle = document.getElementById("chatgpt-timeline-enabled");
 const notionCloseGuardToggle = document.getElementById(
   "notion-close-guard-enabled"
 );
@@ -59,6 +60,7 @@ function getSiteInfo(urlString) {
         name: "ChatGPT",
         supportsFormulaCopier: true,
         supportsEnterEnhancer: true,
+        supportsConversationTimeline: true,
         supportsNotionCloseGuard: false
       };
     }
@@ -73,6 +75,7 @@ function getSiteInfo(urlString) {
         name: "Notion",
         supportsFormulaCopier: false,
         supportsEnterEnhancer: false,
+        supportsConversationTimeline: false,
         supportsNotionCloseGuard: true
       };
     }
@@ -86,17 +89,19 @@ function getSiteInfo(urlString) {
 function renderSupportNote(site) {
   if (!site) {
     supportNote.textContent =
-      "当前页面不在支持站点内。\nChatGPT：支持公式复制与 Enter 增强\nNotion：支持离开确认";
+      "当前页面不在支持站点内。\nChatGPT：支持公式复制、会话时间线与 Enter 增强\nNotion：支持离开确认";
     return;
   }
 
   const formulaText = site.supportsFormulaCopier ? "支持" : "暂不支持";
   const enterText = site.supportsEnterEnhancer ? "支持" : "暂不支持";
+  const timelineText = site.supportsConversationTimeline ? "支持" : "暂不支持";
   const notionText = site.supportsNotionCloseGuard ? "支持" : "暂不支持";
   supportNote.textContent =
     `当前站点：${site.name}\n` +
     `公式复制：${formulaText}\n` +
     `Enter / Ctrl+Enter 增强：${enterText}\n` +
+    `GPT 会话时间线：${timelineText}\n` +
     `Notion 离开确认：${notionText}`;
 }
 
@@ -191,6 +196,7 @@ async function loadSettings() {
     input.checked = input.value === currentFormat;
   });
   enterEnhancerToggle.checked = Boolean(settings.enterEnhancerEnabled);
+  chatgptTimelineToggle.checked = Boolean(settings.chatgptTimelineEnabled);
   notionCloseGuardToggle.checked = Boolean(settings.notionCloseGuardEnabled);
   renderFormulaHistory(history);
   renderSavedPrompts(settings[STORAGE_KEYS.SAVED_PROMPTS]);
@@ -287,6 +293,18 @@ enterEnhancerToggle.addEventListener("change", () => {
   });
 });
 
+chatgptTimelineToggle.addEventListener("change", () => {
+  saveSettings(
+    {
+      chatgptTimelineEnabled: chatgptTimelineToggle.checked
+    },
+    `GPT 会话时间线${chatgptTimelineToggle.checked ? "已开启" : "已关闭"}，已自动保存。`
+  ).catch((error) => {
+    status.textContent =
+      error instanceof Error ? error.message : "保存 GPT 会话时间线设置失败。";
+  });
+});
+
 notionCloseGuardToggle.addEventListener("change", () => {
   saveSettings(
     {
@@ -326,6 +344,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     "formulaCopierEnabled" in changes ||
     "formulaCopyFormat" in changes ||
     "enterEnhancerEnabled" in changes ||
+    "chatgptTimelineEnabled" in changes ||
     "notionCloseGuardEnabled" in changes ||
     STORAGE_KEYS.FORMULA_HISTORY in changes ||
     STORAGE_KEYS.SAVED_PROMPTS in changes
