@@ -1391,6 +1391,10 @@ class TimelineManager {
             try { clearTimeout(this.tooltipHideTimer); } catch {}
             this.tooltipHideTimer = null;
         }
+        if (this.zeroTurnsTimer) {
+            try { clearTimeout(this.zeroTurnsTimer); } catch {}
+            this.zeroTurnsTimer = null;
+        }
         
         if (this.sliderFadeTimer) { try { clearTimeout(this.sliderFadeTimer); } catch {} this.sliderFadeTimer = null; }
         this.pendingActiveId = null;
@@ -1465,21 +1469,65 @@ let bodyBootstrapStarted = false;
 let historyPatched = false;
 let timelineInitSequence = 0;
 let timelineInitInFlight = false;
+let pendingConversationLoad = null;
 let timelineEnabled =
     typeof DEFAULT_SETTINGS[TIMELINE_SETTING_KEY] === "boolean"
         ? DEFAULT_SETTINGS[TIMELINE_SETTING_KEY]
         : true;
 
 function isConversationRoute(pathname = location.pathname) {
+    return Boolean(getConversationRouteId(pathname));
+}
+
+function getConversationRouteId(pathname = location.pathname) {
     const segments = String(pathname || "").split("/").filter(Boolean);
     const index = segments.indexOf("c");
 
     if (index === -1) {
-        return false;
+        return null;
     }
 
     const slug = segments[index + 1];
-    return typeof slug === "string" && /^[A-Za-z0-9_-]+$/.test(slug);
+    return typeof slug === "string" && /^[A-Za-z0-9_-]+$/.test(slug) ? slug : null;
+}
+
+function captureConversationSnapshot() {
+    const firstTurn = document.querySelector("[data-turn-id]");
+    const container = firstTurn?.parentElement || null;
+    const turns = container
+        ? Array.from(container.querySelectorAll("[data-turn-id]"))
+        : Array.from(document.querySelectorAll("[data-turn-id]"));
+    const turnIds = turns
+        .slice(0, 12)
+        .map((turn) => turn.getAttribute("data-turn-id") || "")
+        .join("|");
+
+    return {
+        container,
+        signature: `${turns.length}:${turnIds}`
+    };
+}
+
+function isFreshConversationSnapshot(previousSnapshot) {
+    const nextSnapshot = captureConversationSnapshot();
+
+    if (!nextSnapshot.signature || nextSnapshot.signature === "0:") {
+        return false;
+    }
+
+    if (!previousSnapshot || !previousSnapshot.signature || previousSnapshot.signature === "0:") {
+        return true;
+    }
+
+    if (
+        previousSnapshot.container &&
+        nextSnapshot.container &&
+        previousSnapshot.container !== nextSnapshot.container
+    ) {
+        return true;
+    }
+
+    return previousSnapshot.signature !== nextSnapshot.signature;
 }
 
 function cleanupTimelineUi() {
@@ -1516,8 +1564,8 @@ function disconnectBootstrapObserver() {
     bootstrapObserver = null;
 }
 
-function initializeTimeline() {
-    if (!timelineEnabled || !isConversationRoute()) {
+function initializeTimeline(expectedConversationId = getConversationRouteId()) {
+    if (!timelineEnabled || !isConversationRoute() || getConversationRouteId() !== expectedConversationId) {
         destroyTimeline();
         return;
     }
@@ -1541,7 +1589,8 @@ function initializeTimeline() {
 
             timelineInitInFlight = false;
 
-            if (initialized) {
+            if (initialized && getConversationRouteId() === expectedConversationId) {
+                pendingConversationLoad = null;
                 disconnectBootstrapObserver();
                 return;
             }
@@ -1549,7 +1598,7 @@ function initializeTimeline() {
             timelineManagerInstance = null;
             ensureBootstrapObserver();
             window.setTimeout(() => {
-                if (!timelineManagerInstance && timelineEnabled && isConversationRoute()) {
+                if (!timelineManagerInstance && timelineEnabled && getConversationRouteId() === expectedConversationId) {
                     handleUrlChange(true);
                 }
             }, 1000);
@@ -1566,6 +1615,33 @@ function initializeTimeline() {
         });
 }
 
+function scheduleTimelineInitialization(expectedConversationId, previousSnapshot = null, delay = 250, attempts = 0) {
+    if (initTimerId) {
+        try { clearTimeout(initTimerId); } catch {}
+        initTimerId = null;
+    }
+
+    initTimerId = window.setTimeout(() => {
+        initTimerId = null;
+
+        if (!timelineEnabled || getConversationRouteId() !== expectedConversationId) {
+            pendingConversationLoad = null;
+            destroyTimeline();
+            return;
+        }
+
+        if (document.querySelector("[data-turn-id]") && isFreshConversationSnapshot(previousSnapshot)) {
+            pendingConversationLoad = null;
+            initializeTimeline(expectedConversationId);
+            return;
+        }
+
+        if (attempts < 24) {
+            scheduleTimelineInitialization(expectedConversationId, previousSnapshot, 250, attempts + 1);
+        }
+    }, delay);
+}
+
 function handleUrlChange(force = false) {
     const nextUrl = location.href;
 
@@ -1573,6 +1649,7 @@ function handleUrlChange(force = false) {
         return;
     }
 
+    const previousSnapshot = force ? null : captureConversationSnapshot();
     currentUrl = nextUrl;
 
     try {
@@ -1583,25 +1660,21 @@ function handleUrlChange(force = false) {
     } catch {}
 
     if (!timelineEnabled || !isConversationRoute()) {
+        pendingConversationLoad = null;
         destroyTimeline();
         disconnectBootstrapObserver();
         return;
     }
 
+    const expectedConversationId = getConversationRouteId();
+    pendingConversationLoad = {
+        conversationId: expectedConversationId,
+        previousSnapshot
+    };
+
     ensureBootstrapObserver();
-
-    initTimerId = window.setTimeout(() => {
-        initTimerId = null;
-
-        if (!timelineEnabled || !isConversationRoute()) {
-            destroyTimeline();
-            return;
-        }
-
-        if (document.querySelector("[data-turn-id]")) {
-            initializeTimeline();
-        }
-    }, 1000);
+    destroyTimeline();
+    scheduleTimelineInitialization(expectedConversationId, previousSnapshot, force ? 0 : 250);
 }
 
 function attachRouteListenersOnce() {
@@ -1654,7 +1727,16 @@ function ensureBootstrapObserver() {
         }
 
         if (document.querySelector("[data-turn-id]")) {
-            initializeTimeline();
+            const expectedConversationId = getConversationRouteId();
+            const pendingSnapshot =
+                pendingConversationLoad?.conversationId === expectedConversationId
+                    ? pendingConversationLoad.previousSnapshot
+                    : null;
+
+            if (isFreshConversationSnapshot(pendingSnapshot)) {
+                pendingConversationLoad = null;
+                initializeTimeline(expectedConversationId);
+            }
         }
     });
 
