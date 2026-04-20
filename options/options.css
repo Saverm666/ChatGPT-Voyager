@@ -503,6 +503,7 @@ button {
 .history-card-expression {
   display: flex;
   align-items: center;
+  justify-content: center;
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
@@ -525,6 +526,7 @@ button {
 
 .history-card-expression .katex {
   display: block;
+  margin: 0 auto;
   color: var(--text);
   font-size: 1.16em;
   line-height: 1;
@@ -539,6 +541,7 @@ button {
     serif;
   font-size: 17px;
   line-height: 1.72;
+  text-align: center;
   white-space: nowrap;
 }
 

@@ -570,6 +570,7 @@
 .voyager-gpt-panel-expression {
   display: flex;
   align-items: center;
+  justify-content: center;
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
@@ -592,6 +593,7 @@
 
 .voyager-gpt-panel-expression .katex {
   display: block;
+  margin: 0 auto;
   color: rgba(0, 0, 0, 0.88);
   font-size: 1.14em;
   line-height: 1;
@@ -606,6 +608,7 @@
     serif;
   font-size: 16px;
   line-height: 1.7;
+  text-align: center;
   white-space: nowrap;
 }
 
