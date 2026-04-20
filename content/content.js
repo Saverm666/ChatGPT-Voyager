@@ -170,6 +170,66 @@ function getNormalizedElementText(element) {
     .trim();
 }
 
+function extractLatexSourceFromContainer(containerElement) {
+  if (!(containerElement instanceof Element)) {
+    return null;
+  }
+
+  const annotation = containerElement.querySelector(
+    'annotation[encoding="application/x-tex"], annotation[encoding="text/x-latex"]'
+  );
+
+  if (annotation) {
+    return annotation.textContent.trim().replace(/\s*\\tag\{.*\}/, "").trim();
+  }
+
+  let currentElement = containerElement;
+
+  while (currentElement) {
+    const root = currentElement.getRootNode();
+
+    if (root instanceof ShadowRoot) {
+      const host = root.host;
+
+      if (
+        host &&
+        host.tagName === "CIB-MATH" &&
+        host.hasAttribute("raw")
+      ) {
+        return host.getAttribute("raw").trim();
+      }
+
+      currentElement = host;
+    } else {
+      currentElement = null;
+    }
+  }
+
+  const mathElement = containerElement.querySelector("math, [role='math']");
+
+  if (mathElement) {
+    for (const child of mathElement.childNodes) {
+      if (child.nodeType !== Node.TEXT_NODE) {
+        continue;
+      }
+
+      const latex = child.textContent.trim();
+
+      if (
+        latex.length > 1 &&
+        (latex.includes("\\") ||
+          latex.includes("^") ||
+          latex.includes("_") ||
+          latex.includes("{"))
+      ) {
+        return latex;
+      }
+    }
+  }
+
+  return null;
+}
+
 const formulaCopierModule = (() => {
   let enabled = false;
   let copyFormat = DEFAULT_FORMULA_COPY_FORMAT;
@@ -276,59 +336,7 @@ const formulaCopierModule = (() => {
   }
 
   function getLatexSource(containerElement) {
-    const annotation = containerElement.querySelector(
-      'annotation[encoding="application/x-tex"], annotation[encoding="text/x-latex"]'
-    );
-
-    if (annotation) {
-      return annotation.textContent.trim().replace(/\s*\\tag\{.*\}/, "").trim();
-    }
-
-    let currentElement = containerElement;
-
-    while (currentElement) {
-      const root = currentElement.getRootNode();
-
-      if (root instanceof ShadowRoot) {
-        const host = root.host;
-
-        if (
-          host &&
-          host.tagName === "CIB-MATH" &&
-          host.hasAttribute("raw")
-        ) {
-          return host.getAttribute("raw").trim();
-        }
-
-        currentElement = host;
-      } else {
-        currentElement = null;
-      }
-    }
-
-    const mathElement = containerElement.querySelector("math, [role='math']");
-
-    if (mathElement) {
-      for (const child of mathElement.childNodes) {
-        if (child.nodeType !== Node.TEXT_NODE) {
-          continue;
-        }
-
-        const latex = child.textContent.trim();
-
-        if (
-          latex.length > 1 &&
-          (latex.includes("\\") ||
-            latex.includes("^") ||
-            latex.includes("_") ||
-            latex.includes("{"))
-        ) {
-          return latex;
-        }
-      }
-    }
-
-    return null;
+    return extractLatexSourceFromContainer(containerElement);
   }
 
   function canConvertLatexToUnicodeMath() {
@@ -526,6 +534,533 @@ const formulaCopierModule = (() => {
       clearFeedback();
       enabled = false;
       console.log(`[${SCRIPT_NAME}] 公式复制功能已关闭。`);
+    }
+  };
+})();
+
+const markdownCopyModule = (() => {
+  let enabled = false;
+  let lastCopyPayload = "";
+  const BLOCK_TAGS = new Set([
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "td",
+    "th",
+    "tr",
+    "ul"
+  ]);
+
+  function isEditableSelectionTarget(node) {
+    const element =
+      node instanceof Element
+        ? node
+        : node instanceof Node
+          ? node.parentElement
+          : null;
+
+    if (!(element instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(
+      element.closest(
+        "input, textarea, [contenteditable='true'], [contenteditable='plaintext-only']"
+      )
+    );
+  }
+
+  function shouldSkipInvisibleElement(element) {
+    if (!(element instanceof Element)) {
+      return false;
+    }
+
+    if (element.closest(".formula-copier-feedback, .voyager-branch-selection-root")) {
+      return true;
+    }
+
+    const ariaHidden = element.getAttribute("aria-hidden");
+    if (ariaHidden === "true" && !element.closest(".katex, .katex-display, mjx-container")) {
+      return true;
+    }
+
+    if (element.hasAttribute("hidden")) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function normalizeInlineText(text) {
+    return String(text || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ");
+  }
+
+  function escapeMarkdownLinkText(text) {
+    return String(text || "").replace(/]/g, "\\]");
+  }
+
+  function formatInlineCode(text) {
+    const content = String(text || "").replace(/\n+$/g, "");
+    const fence = content.includes("`") ? "``" : "`";
+    return `${fence}${content}${fence}`;
+  }
+
+  function cleanupMarkdownSpacing(markdown) {
+    const normalized = String(markdown || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n[ \t]+\n/g, "\n\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/ {2,}/g, " ")
+      .replace(/([^\n ])  +([^\n])/g, "$1 $2")
+      .trim();
+
+    const lines = normalized.split("\n");
+    let inCodeBlock = false;
+    const cleanedLines = lines.map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        return trimmed;
+      }
+
+      if (inCodeBlock) {
+        return line.replace(/[ \t]+$/g, "");
+      }
+
+      if (!trimmed) {
+        return "";
+      }
+
+      if (/^(?:>|\- |\* |\d+\. )/.test(trimmed)) {
+        return trimmed;
+      }
+
+      return trimmed;
+    });
+
+    return cleanedLines.join("\n").trim();
+  }
+
+  function isRangeNodeSelected(node, range) {
+    if (!(node instanceof Node) || !(range instanceof Range)) {
+      return false;
+    }
+
+    try {
+      return range.intersectsNode(node);
+    } catch {
+      return false;
+    }
+  }
+
+  function isFormulaElement(element) {
+    return Boolean(
+      element instanceof Element &&
+        (
+          element.matches(
+            ".katex, .katex-display, .katex-mathml, mjx-container, math, [role='math'], cib-math"
+          ) ||
+          (element.tagName === "SPAN" &&
+            element.querySelector?.(
+              "annotation[encoding='application/x-tex'], annotation[encoding='text/x-latex']"
+            ))
+        )
+    );
+  }
+
+  function isDisplayFormulaElement(element) {
+    if (!(element instanceof Element)) {
+      return false;
+    }
+
+    if (element.matches(".katex-display")) {
+      return true;
+    }
+
+    const display = window.getComputedStyle(element).display;
+    return display === "block" || display === "flex";
+  }
+
+  function getSelectedTextContent(textNode, range) {
+    const raw = String(textNode.textContent || "");
+    let start = 0;
+    let end = raw.length;
+
+    if (textNode === range.startContainer) {
+      start = Math.max(0, range.startOffset);
+    }
+
+    if (textNode === range.endContainer) {
+      end = Math.min(raw.length, range.endOffset);
+    }
+
+    if (textNode === range.startContainer && textNode === range.endContainer) {
+      start = Math.max(0, Math.min(range.startOffset, raw.length));
+      end = Math.max(start, Math.min(range.endOffset, raw.length));
+    }
+
+    return raw.slice(start, end);
+  }
+
+  function getSelectedElementText(element, range) {
+    if (!(element instanceof Element) || !(range instanceof Range)) {
+      return "";
+    }
+
+    const fragment = range.cloneContents();
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(fragment);
+    return wrapper.textContent || "";
+  }
+
+  function serializeInlineChildren(node, range) {
+    if (!(node instanceof Node)) {
+      return "";
+    }
+
+    return Array.from(node.childNodes)
+      .map((child) => serializeNodeToMarkdown(child, range, { preserveWhitespace: false }))
+      .join("")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n[ \t]+/g, "\n")
+      .replace(/ {2,}/g, " ");
+  }
+
+  function serializeList(element, ordered, range) {
+    const items = Array.from(element.children).filter(
+      (child) =>
+        child instanceof HTMLElement &&
+        child.tagName === "LI" &&
+        isRangeNodeSelected(child, range)
+    );
+
+    if (items.length === 0) {
+      return "";
+    }
+
+    return `${items
+      .map((item, index) => {
+        const prefix = ordered ? `${index + 1}. ` : "- ";
+        const body = serializeInlineChildren(item, range).trim().replace(/\n/g, "\n   ");
+        return `${prefix}${body}`;
+      })
+      .join("\n")}\n\n`;
+  }
+
+  function serializeTable(element, range) {
+    const rows = Array.from(element.querySelectorAll("tr"))
+      .filter((row) => isRangeNodeSelected(row, range))
+      .map((row) =>
+        Array.from(row.children)
+          .filter((cell) => /^(TH|TD)$/.test(cell.tagName))
+          .map((cell) => serializeInlineChildren(cell, range).trim().replace(/\|/g, "\\|"))
+      )
+      .filter((row) => row.length > 0);
+
+    if (rows.length === 0) {
+      return "";
+    }
+
+    const header = rows[0];
+    const separator = header.map(() => "---");
+    const body = rows.slice(1);
+    const lines = [
+      `| ${header.join(" | ")} |`,
+      `| ${separator.join(" | ")} |`,
+      ...body.map((row) => `| ${row.join(" | ")} |`)
+    ];
+
+    return `${lines.join("\n")}\n\n`;
+  }
+
+  function serializeNodeToMarkdown(node, range, context = {}) {
+    if (!(node instanceof Node)) {
+      return "";
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (!isRangeNodeSelected(node, range)) {
+        return "";
+      }
+      return context.preserveWhitespace
+        ? getSelectedTextContent(node, range)
+        : normalizeInlineText(getSelectedTextContent(node, range));
+    }
+
+    if (
+      !(node instanceof Element) ||
+      shouldSkipInvisibleElement(node) ||
+      !isRangeNodeSelected(node, range)
+    ) {
+      return "";
+    }
+
+    if (isFormulaElement(node)) {
+      const latex =
+        extractLatexSourceFromContainer(node) ||
+        normalizeInlineText(getSelectedElementText(node, range) || node.textContent || "");
+
+      if (!latex) {
+        return "";
+      }
+
+      return isDisplayFormulaElement(node) ? `\n${latex}\n` : latex;
+    }
+
+    const tagName = node.tagName.toLowerCase();
+
+    if (tagName === "br") {
+      return "\n";
+    }
+
+    if (tagName === "pre") {
+      const code = node.querySelector("code");
+      const languageClass = Array.from(code?.classList || []).find((className) =>
+        className.startsWith("language-")
+      );
+      const language = languageClass ? languageClass.slice("language-".length) : "";
+      const text = String(getSelectedElementText(code || node, range) || "").replace(/\n+$/g, "");
+      return `\`\`\`${language}\n${text}\n\`\`\`\n\n`;
+    }
+
+    if (tagName === "code") {
+      return formatInlineCode(getSelectedElementText(node, range) || "");
+    }
+
+    if (/^h[1-6]$/.test(tagName)) {
+      const level = Number(tagName.slice(1)) || 1;
+      const text = serializeInlineChildren(node, range).trim();
+      return text ? `${"#".repeat(level)} ${text}\n\n` : "";
+    }
+
+    if (tagName === "p") {
+      const text = serializeInlineChildren(node, range).trim();
+      return text ? `${text}\n\n` : "";
+    }
+
+    if (tagName === "blockquote") {
+      const text = cleanupMarkdownSpacing(
+        Array.from(node.childNodes)
+          .map((child) => serializeNodeToMarkdown(child, range, { preserveWhitespace: false }))
+          .join("")
+      );
+      return text
+        ? `${text
+            .split("\n")
+            .map((line) => `> ${line}`)
+            .join("\n")}\n\n`
+        : "";
+    }
+
+    if (tagName === "ul") {
+      return serializeList(node, false, range);
+    }
+
+    if (tagName === "ol") {
+      return serializeList(node, true, range);
+    }
+
+    if (tagName === "table") {
+      return serializeTable(node, range);
+    }
+
+    if (tagName === "strong" || tagName === "b") {
+      const text = serializeInlineChildren(node, range).trim();
+      return text ? `**${text}**` : "";
+    }
+
+    if (tagName === "em" || tagName === "i") {
+      const text = serializeInlineChildren(node, range).trim();
+      return text ? `*${text}*` : "";
+    }
+
+    if (tagName === "a") {
+      const text =
+        serializeInlineChildren(node, range).trim() ||
+        normalizeInlineText(getSelectedElementText(node, range) || "");
+      const href = String(node.getAttribute("href") || "").trim();
+      if (!href) {
+        return text;
+      }
+      return `[${escapeMarkdownLinkText(text)}](${href})`;
+    }
+
+    if (tagName === "hr") {
+      return "\n---\n\n";
+    }
+
+    const rendered = Array.from(node.childNodes)
+      .map((child) =>
+        serializeNodeToMarkdown(child, range, {
+          preserveWhitespace: context.preserveWhitespace || tagName === "pre"
+        })
+      )
+      .join("");
+
+    if (BLOCK_TAGS.has(tagName)) {
+      if (tagName === "div" && !/\n/.test(rendered)) {
+        return rendered;
+      }
+      return rendered;
+    }
+
+    return rendered;
+  }
+
+  function getMarkdownCopyPayload() {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const startTurn = getClosestConversationTurnElement(range.startContainer);
+    const endTurn = getClosestConversationTurnElement(range.endContainer);
+
+    if (!startTurn || startTurn !== endTurn || startTurn.dataset.turn !== "assistant") {
+      return null;
+    }
+
+    if (
+      isEditableSelectionTarget(range.startContainer) ||
+      isEditableSelectionTarget(range.endContainer)
+    ) {
+      return null;
+    }
+
+    const assistantRoot =
+      startTurn.querySelector('[data-message-author-role="assistant"], .markdown') || startTurn;
+    const markdown = cleanupMarkdownSpacing(
+      Array.from(assistantRoot.childNodes)
+        .map((child) => serializeNodeToMarkdown(child, range, { preserveWhitespace: false }))
+        .join("")
+    );
+
+    if (!markdown) {
+      return null;
+    }
+
+    return markdown;
+  }
+
+  function handleCopy(event) {
+    if (!enabled || !(event instanceof ClipboardEvent) || !event.clipboardData) {
+      return;
+    }
+
+    const markdown = getMarkdownCopyPayload() || lastCopyPayload;
+
+    if (!markdown) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    event.clipboardData.setData("text/plain", markdown);
+    lastCopyPayload = markdown;
+  }
+
+  async function writeMarkdownToClipboard(markdown) {
+    if (!markdown) {
+      return false;
+    }
+
+    lastCopyPayload = markdown;
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(markdown);
+        return true;
+      } catch {}
+    }
+
+    return false;
+  }
+
+  function shouldHandleCopyShortcut(event) {
+    if (!(event instanceof KeyboardEvent)) {
+      return false;
+    }
+
+    if (event.defaultPrevented || event.repeat || event.altKey || event.shiftKey) {
+      return false;
+    }
+
+    const isCopyKey = event.key.toLowerCase() === "c";
+    const usesSystemModifier = navigator.platform.includes("Mac")
+      ? event.metaKey && !event.ctrlKey
+      : event.ctrlKey && !event.metaKey;
+
+    if (!isCopyKey || !usesSystemModifier) {
+      return false;
+    }
+
+    return !isEditableSelectionTarget(event.target);
+  }
+
+  function handleCopyShortcut(event) {
+    if (!enabled || !shouldHandleCopyShortcut(event)) {
+      return;
+    }
+
+    const markdown = getMarkdownCopyPayload();
+    if (!markdown) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    writeMarkdownToClipboard(markdown).catch(() => {});
+  }
+
+  return {
+    enable() {
+      if (enabled || !isChatGPTPage) {
+        return;
+      }
+
+      enabled = true;
+      document.addEventListener("keydown", handleCopyShortcut, true);
+      document.addEventListener("copy", handleCopy, true);
+    },
+
+    disable() {
+      if (!enabled) {
+        return;
+      }
+
+      enabled = false;
+      document.removeEventListener("keydown", handleCopyShortcut, true);
+      document.removeEventListener("copy", handleCopy, true);
+      lastCopyPayload = "";
     }
   };
 })();
@@ -3215,6 +3750,7 @@ const chatgptHeaderEntryModule = (() => {
 })();
 
 handleExtensionContextInvalidated = () => {
+  markdownCopyModule.disable();
   branchSelectionModule.disable();
   chatgptHeaderEntryModule.disable();
 };
@@ -3231,6 +3767,7 @@ function getFeatureSupportSummary() {
 
 function applySettings(settings) {
   if (isChatGPTPage) {
+    markdownCopyModule.enable();
     branchSelectionModule.enable();
     chatgptHeaderEntryModule.enable();
   }
