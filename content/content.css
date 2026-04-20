@@ -121,24 +121,20 @@
   appearance: none;
   box-sizing: border-box;
   position: relative;
-  z-index: 1;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: var(--voyager-gpt-entry-height, 36px);
   min-height: var(--voyager-gpt-entry-height, 36px);
-  padding: 0 12px;
-  border: 1px solid transparent;
+  padding: 0 10px;
   border-radius: 8px;
   background: transparent;
   color: #0d0d0d;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.42857;
-  letter-spacing: -0.01em;
   cursor: pointer;
   pointer-events: auto;
-  transform: translateY(-2px);
   transition:
     background-color 140ms ease,
     border-color 140ms ease,

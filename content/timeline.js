@@ -1,3 +1,4 @@
+
 (() => {
     const { DEFAULT_SETTINGS = {} } = globalThis.ChatGPTVoyagerShared || {};
     const TIMELINE_SETTING_KEY = "chatgptTimelineEnabled";
@@ -10,7 +11,7 @@
     if (!isChatGPTPage) {
         return;
     }
-
+    
 class TimelineManager {
     constructor() {
         this.scrollContainer = null;
@@ -107,7 +108,11 @@ class TimelineManager {
 
     async init() {
         const elementsFound = await this.findCriticalElements();
-        if (!elementsFound) return false;
+        if (!elementsFound) {
+            console.log('findCriticalElements这里的问题这里的问题')
+            return false;
+        }
+
         
         this.injectTimelineUI();
         this.setupEventListeners();
@@ -139,7 +144,10 @@ class TimelineManager {
     
     async findCriticalElements() {
         const firstTurn = await this.waitForElement('[data-turn-id]');
-        if (!firstTurn) return false;
+        if (!firstTurn) {
+            console.log('waitForElement这里的问题这里的问题')
+            return false;
+        }
         
         this.conversationContainer = firstTurn.parentElement;
         if (!this.conversationContainer) return false;
@@ -1544,7 +1552,7 @@ function initializeTimeline() {
                 if (!timelineManagerInstance && timelineEnabled && isConversationRoute()) {
                     handleUrlChange(true);
                 }
-            }, 300);
+            }, 1000);
         })
         .catch((error) => {
             if (initSequence !== timelineInitSequence || timelineManagerInstance !== nextManager) {
@@ -1593,7 +1601,7 @@ function handleUrlChange(force = false) {
         if (document.querySelector("[data-turn-id]")) {
             initializeTimeline();
         }
-    }, 300);
+    }, 1000);
 }
 
 function attachRouteListenersOnce() {
@@ -1657,7 +1665,28 @@ function ensureBootstrapObserver() {
         });
     } catch {}
 }
+function listenToChatGPTNavigation() {
+    document.body.addEventListener('click', (event) => {
+        // 找到实际被点击的 <a> 标签
+        const anchor = event.target.closest('a[href^="/c/"]');
+        if (!anchor) return;
 
+        const newUrl = new URL(anchor.href, window.location.href).pathname;
+        const currentPath = window.location.pathname;
+        
+        if (newUrl === currentPath) return;
+        
+        if (window._timelinePendingNavigation) return;
+        window._timelinePendingNavigation = true;
+        
+        // 使用 MutationObserver 或微任务，等待 DOM 更新后再重建
+        // 最简单：在下一个事件循环检查 URL
+        setTimeout(() => {
+            window._timelinePendingNavigation = false;
+            handleUrlChange();  // 调用你已有的函数
+        }, 50);
+    }, true); // 捕获阶段确保先于页面脚本
+}
 function bootstrapWhenBodyReady() {
     if (bodyBootstrapStarted) {
         return;
@@ -1669,10 +1698,10 @@ function bootstrapWhenBodyReady() {
     }
 
     bodyBootstrapStarted = true;
+    listenToChatGPTNavigation();
     attachRouteListenersOnce();
     patchHistoryMethodsOnce();
     ensureBootstrapObserver();
-    handleUrlChange(true);
 }
 
 function applyStoredTimelineSetting() {
@@ -1711,7 +1740,6 @@ try {
         handleUrlChange(true);
     });
 } catch (error) {
-    console.error(`${LOG_PREFIX} 启动失败。`, error);
     bootstrapWhenBodyReady();
 }
 })();

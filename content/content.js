@@ -3500,85 +3500,42 @@ const chatgptHeaderEntryModule = (() => {
   }
 
   function positionRoot() {
-    if (!root) {
-      return;
+    if (!root) return;
+  
+    const header = document.querySelector('#page-header');
+    if (!header) return;
+  
+    // 获取第二个子 div（即包含模型选择器和 ChatGPT 文字的那个）
+    if (root.parentElement !== header) {
+        header.appendChild(root);
+    } else if (header.lastElementChild !== root) {
+        header.appendChild(root);
     }
+  
+    // 将 root 放入 header 并保证位于最后
 
-    const parent = document.body || document.documentElement;
-
-    if (root.parentElement !== parent) {
-      parent.appendChild(root);
-    }
-
-    const actionAnchor = findTopRightActionAnchor();
-
-    if (actionAnchor) {
-      const actionRect = actionAnchor.getBoundingClientRect();
-      const actionHeightPx = `${Math.max(32, Math.round(actionRect.height))}px`;
-
-      if (actionHeightPx !== lastRootEntryHeightPx) {
-        root.style.setProperty("--voyager-gpt-entry-height", actionHeightPx);
-        lastRootEntryHeightPx = actionHeightPx;
-      }
-    } else {
-      if (lastRootEntryHeightPx) {
-        root.style.removeProperty("--voyager-gpt-entry-height");
-        lastRootEntryHeightPx = "";
-      }
-    }
-
-    root.classList.remove("voyager-gpt-entry-root-inline");
-
-    const titleAnchor = findHeaderAnchor();
-    const measuredRect = button?.getBoundingClientRect() || root.getBoundingClientRect();
-    const rootWidth = Math.max(
-      button?.offsetWidth || root.offsetWidth || Math.ceil(measuredRect.width) || 0,
-      136
-    );
-    const rootHeight = Math.max(
-      button?.offsetHeight || root.offsetHeight || Math.ceil(measuredRect.height) || 0,
-      36
-    );
-    let top = 14;
-    let left = window.innerWidth - rootWidth - 64;
-
-    if (actionAnchor) {
-      const rect = actionAnchor.getBoundingClientRect();
-      top = Math.max(
-        10,
-        Math.min(
-          window.innerHeight - rootHeight - 10,
-          rect.top + (rect.height - rootHeight) / 2
-        )
-      );
-      left = rect.left - rootWidth - 10;
-    } else if (titleAnchor) {
-      const rect = titleAnchor.getBoundingClientRect();
-      top = Math.max(
-        10,
-        Math.min(
-          window.innerHeight - rootHeight - 10,
-          rect.top + (rect.height - rootHeight) / 2
-        )
-      );
-    }
-
-    const nextTopPx = `${Math.round(Math.max(10, top))}px`;
-    const nextLeftPx = `${Math.round(
-      Math.max(12, Math.min(left, window.innerWidth - rootWidth - 12))
-    )}px`;
-
-    if (nextTopPx !== lastRootTopPx) {
-      root.style.top = nextTopPx;
-      lastRootTopPx = nextTopPx;
-    }
-
-    if (nextLeftPx !== lastRootLeftPx) {
-      root.style.left = nextLeftPx;
-      lastRootLeftPx = nextLeftPx;
-    }
+  
+    // 设置 header 布局
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+  
+    // 移除绝对定位相关的样式和变量
+    root.style.position = 'relative';
+    root.style.top = 'auto';
+    root.style.left = 'auto';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    root.style.removeProperty('--voyager-gpt-entry-height');
+    lastRootEntryHeightPx = '';   // 假设这是外部变量
+    root.classList.remove('voyager-gpt-entry-root-inline');
+  
+    // 可选：调整 root 自身外观
+    root.style.marginLeft = '6px';
+    root.style.flexShrink = '0';
   }
 
+  
   function ensureButton() {
     cleanupStaleUi();
 
@@ -4348,7 +4305,6 @@ const chatgptHeaderEntryModule = (() => {
 
     viewportFrame = window.requestAnimationFrame(() => {
       viewportFrame = null;
-      positionRoot();
 
       if (panelOpen) {
         positionPanel();
