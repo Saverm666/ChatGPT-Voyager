@@ -1,4 +1,5 @@
 .DS_Store
 *.zip
 *.tgz
+*:Zone.Identifier
 references/chatgpt-conversation-timeline/
