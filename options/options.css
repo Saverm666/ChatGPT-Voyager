@@ -309,6 +309,18 @@ input[type="checkbox"]:checked {
   background: var(--accent);
 }
 
+.feature-row input[type="number"] {
+  width: 84px;
+  height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  flex: 0 0 auto;
+}
+
 input[type="checkbox"]:checked::after {
   transform: translateX(16px);
 }

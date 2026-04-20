@@ -34,6 +34,7 @@ class TimelineManager {
         this.onTimelineBarFocusOut = null;
         this.onWindowResize = null;
         this.onTimelineWheel = null;
+        this.onConversationVisibilityChange = null;
         this.scrollRafId = null;
         this.lastActiveChangeTime = 0;
         this.minActiveChangeInterval = 120; // ms
@@ -251,7 +252,9 @@ class TimelineManager {
         this.perfStart('recalc');
         if (!this.conversationContainer || !this.ui.timelineBar || !this.scrollContainer) return;
 
-        const userTurnElements = this.conversationContainer.querySelectorAll('[data-turn="user"]');
+        const userTurnElements = Array.from(
+            this.conversationContainer.querySelectorAll('[data-turn="user"]')
+        ).filter((el) => !el.closest('[data-chatgpt-voyager-collapsed-message="1"]'));
         // Reset visible window to avoid cleaning with stale indices after rebuild
         this.visibleRange = { start: 0, end: -1 };
         // If the conversation is transiently empty (branch switching), don't wipe UI immediately
@@ -268,25 +271,19 @@ class TimelineManager {
         // Clear old dots from track/content (now that we know content exists)
         (this.ui.trackContent || this.ui.timelineBar).querySelectorAll('.timeline-dot').forEach(n => n.remove());
 
-        let contentSpan;
         const firstTurnOffset = userTurnElements[0].offsetTop;
-        if (userTurnElements.length < 2) {
-            contentSpan = 1;
-        } else {
-            const lastTurnOffset = userTurnElements[userTurnElements.length - 1].offsetTop;
-            contentSpan = lastTurnOffset - firstTurnOffset;
-        }
-        if (contentSpan <= 0) contentSpan = 1;
+        const lastTurnOffset = userTurnElements[userTurnElements.length - 1].offsetTop;
+        const contentSpan = Math.max(1, lastTurnOffset - firstTurnOffset);
 
-        // Cache for scroll mapping
+        // Cache for scroll mapping. Dot placement is intentionally equal-spaced;
+        // scroll sync still uses real offsets for the visible message set.
         this.firstUserTurnOffset = firstTurnOffset;
         this.contentSpanPx = contentSpan;
 
         // Build markers with normalized position along conversation
         this.markerMap.clear();
-        this.markers = Array.from(userTurnElements).map(el => {
-            const offsetFromStart = el.offsetTop - firstTurnOffset;
-            let n = offsetFromStart / contentSpan;
+        this.markers = userTurnElements.map((el, index) => {
+            let n = userTurnElements.length <= 1 ? 0 : index / (userTurnElements.length - 1);
             n = Math.max(0, Math.min(1, n));
             const m = {
                 id: el.dataset.turnId,
@@ -624,6 +621,15 @@ class TimelineManager {
             this.showSlider();
         };
         this.ui.timelineBar.addEventListener('wheel', this.onTimelineWheel, { passive: false });
+
+        this.onConversationVisibilityChange = () => {
+            try { this.ensureContainersUpToDate(); } catch {}
+            try { this.updateIntersectionObserverTargets(); } catch {}
+            try { this.recalculateAndRenderMarkers(); } catch {}
+        };
+        try {
+            window.addEventListener('chatgpt-voyager:conversation-visibility-change', this.onConversationVisibilityChange);
+        } catch {}
 
         // Slider drag handlers
         this.onSliderDown = (ev) => {
@@ -1346,6 +1352,9 @@ class TimelineManager {
         if (this.onWindowResize) {
             try { window.removeEventListener('resize', this.onWindowResize); } catch {}
         }
+        if (this.onConversationVisibilityChange) {
+            try { window.removeEventListener('chatgpt-voyager:conversation-visibility-change', this.onConversationVisibilityChange); } catch {}
+        }
         if (this.onVisualViewportResize && window.visualViewport) {
             try { window.visualViewport.removeEventListener('resize', this.onVisualViewportResize); } catch {}
             this.onVisualViewportResize = null;
@@ -1383,6 +1392,7 @@ class TimelineManager {
         this.onTimelineBarFocusOut = null;
         this.onScroll = null;
         this.onWindowResize = null;
+        this.onConversationVisibilityChange = null;
         if (this.activeChangeTimer) {
             try { clearTimeout(this.activeChangeTimer); } catch {}
             this.activeChangeTimer = null;

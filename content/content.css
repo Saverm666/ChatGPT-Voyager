@@ -243,6 +243,51 @@
   margin-top: 16px;
 }
 
+.voyager-gpt-panel-light {
+  margin-bottom: 16px;
+}
+
+.voyager-gpt-panel-light-actions {
+  display: grid;
+  grid-template-columns: minmax(88px, 25%) 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.voyager-gpt-panel-light-button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #0d0d0d;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.voyager-gpt-panel-light-button:hover:not(:disabled) {
+  background: rgba(82, 82, 82, 0.95);
+  border-color: rgba(82, 82, 82, 0.95);
+}
+
+.voyager-gpt-panel-light-button:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
+.voyager-gpt-panel-light-hint {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.42);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .voyager-gpt-panel-section {
   display: grid;
   gap: 10px;
@@ -731,6 +776,22 @@ html.dark .voyager-gpt-panel-status,
 html.dark .voyager-gpt-panel-close,
 html.dark .voyager-gpt-panel-link {
   color: rgba(255, 255, 255, 0.62);
+}
+
+html.dark .voyager-gpt-panel-light-button {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.9);
+  color: rgba(32, 33, 35, 0.98);
+}
+
+html.dark .voyager-gpt-panel-light-button:hover:not(:disabled) {
+  background: rgba(229, 231, 235, 0.82);
+  border-color: rgba(229, 231, 235, 0.82);
+  color: rgba(32, 33, 35, 0.98);
+}
+
+html.dark .voyager-gpt-panel-light-hint {
+  color: rgba(255, 255, 255, 0.48);
 }
 
 html.dark .voyager-gpt-panel-item {

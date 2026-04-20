@@ -26,6 +26,10 @@ const markdownFormulaWrapModeInputs = document.querySelectorAll(
 );
 const enterEnhancerToggle = document.getElementById("enter-enhancer-enabled");
 const chatgptTimelineToggle = document.getElementById("chatgpt-timeline-enabled");
+const chatgptCollapseToggle = document.getElementById("chatgpt-collapse-enabled");
+const chatgptCollapseKeepLatestInput = document.getElementById(
+  "chatgpt-collapse-keep-latest"
+);
 const notionCloseGuardToggle = document.getElementById(
   "notion-close-guard-enabled"
 );
@@ -42,6 +46,15 @@ function getFormulaCopyFormatLabel(value) {
 
 function getMarkdownFormulaWrapModeLabel(value) {
   return MARKDOWN_FORMULA_WRAP_LABELS[normalizeMarkdownFormulaWrapMode(value)];
+}
+
+function normalizeCollapseKeepLatest(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return DEFAULT_LOCAL_DATA.chatgptCollapseKeepLatest || 20;
+  }
+
+  return Math.min(Math.max(Math.trunc(numberValue), 1), 1000);
 }
 
 async function getCurrentTab() {
@@ -219,6 +232,10 @@ async function loadSettings() {
   });
   enterEnhancerToggle.checked = Boolean(settings.enterEnhancerEnabled);
   chatgptTimelineToggle.checked = Boolean(settings.chatgptTimelineEnabled);
+  chatgptCollapseToggle.checked = Boolean(settings.chatgptLongConversationCollapseEnabled);
+  chatgptCollapseKeepLatestInput.value = String(
+    normalizeCollapseKeepLatest(settings.chatgptCollapseKeepLatest)
+  );
   notionCloseGuardToggle.checked = Boolean(settings.notionCloseGuardEnabled);
   renderFormulaHistory(history);
   renderSavedPrompts(settings[STORAGE_KEYS.SAVED_PROMPTS]);
@@ -343,6 +360,32 @@ chatgptTimelineToggle.addEventListener("change", () => {
   });
 });
 
+chatgptCollapseToggle.addEventListener("change", () => {
+  saveSettings(
+    {
+      chatgptLongConversationCollapseEnabled: chatgptCollapseToggle.checked
+    },
+    `GPT 长对话折叠${chatgptCollapseToggle.checked ? "已开启" : "已关闭"}，已自动保存。`
+  ).catch((error) => {
+    status.textContent =
+      error instanceof Error ? error.message : "保存 GPT 长对话折叠设置失败。";
+  });
+});
+
+chatgptCollapseKeepLatestInput.addEventListener("change", () => {
+  const keepLatest = normalizeCollapseKeepLatest(chatgptCollapseKeepLatestInput.value);
+  chatgptCollapseKeepLatestInput.value = String(keepLatest);
+  saveSettings(
+    {
+      chatgptCollapseKeepLatest: keepLatest
+    },
+    `轻量对话将保留最近 ${keepLatest} 条消息，已自动保存。`
+  ).catch((error) => {
+    status.textContent =
+      error instanceof Error ? error.message : "保存轻量对话保留数量失败。";
+  });
+});
+
 notionCloseGuardToggle.addEventListener("change", () => {
   saveSettings(
     {
@@ -384,6 +427,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     "markdownFormulaWrapMode" in changes ||
     "enterEnhancerEnabled" in changes ||
     "chatgptTimelineEnabled" in changes ||
+    "chatgptLongConversationCollapseEnabled" in changes ||
+    "chatgptCollapseKeepLatest" in changes ||
     "notionCloseGuardEnabled" in changes ||
     STORAGE_KEYS.FORMULA_HISTORY in changes ||
     STORAGE_KEYS.SAVED_PROMPTS in changes

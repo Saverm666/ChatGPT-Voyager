@@ -46,11 +46,13 @@
         "shared/shared.js",
         "vendor/tex-to-unicode/tex-to-unicodemath.ascii.js",
         "vendor/katex/katex.min.js",
+        "content/collapse.js",
         "content/timeline.js",
         "content/content.js"
       ],
       "css": [
         "vendor/katex/katex.min.css",
+        "content/collapse.css",
         "content/content.css",
         "content/timeline.css"
       ],

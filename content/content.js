@@ -3094,6 +3094,8 @@ const chatgptHeaderEntryModule = (() => {
   let panel = null;
   let promptsContainer = null;
   let historyContainer = null;
+  let lightConversationButton = null;
+  let lightConversationHint = null;
   let promptEditorOverlay = null;
   let promptEditorDialog = null;
   let promptEditorForm = null;
@@ -3114,6 +3116,10 @@ const chatgptHeaderEntryModule = (() => {
   let lastRootEntryHeightPx = "";
   let cachedPrompts = [];
   let cachedHistory = [];
+  let collapseSettings = {
+    enabled: Boolean(DEFAULT_SETTINGS.chatgptLongConversationCollapseEnabled),
+    keepLatest: DEFAULT_SETTINGS.chatgptCollapseKeepLatest || 20
+  };
   let draggedPromptId = "";
   let normalizedPromptSeed = 0;
   let normalizedHistorySeed = 0;
@@ -3160,6 +3166,73 @@ const chatgptHeaderEntryModule = (() => {
     const formatLabel = getFormatLabel(entry.format);
     const timeLabel = formatTimestamp(entry.copiedAt) || "刚刚复制";
     return `${formatLabel} · ${timeLabel}`;
+  }
+
+  function normalizeCollapseKeepLatest(value) {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) {
+      return DEFAULT_SETTINGS.chatgptCollapseKeepLatest || 20;
+    }
+
+    return Math.min(Math.max(Math.trunc(numberValue), 1), 1000);
+  }
+
+  function getLightConversationState() {
+    const apiState =
+      typeof globalThis.ChatGPTVoyagerCollapse?.getState === "function"
+        ? globalThis.ChatGPTVoyagerCollapse.getState()
+        : {};
+
+    return {
+      enabled: Boolean(collapseSettings.enabled && apiState.enabled !== false),
+      keepLatest: normalizeCollapseKeepLatest(apiState.keepLatest || collapseSettings.keepLatest),
+      collapsedCount: Number(apiState.collapsedCount || 0),
+      isConversationRoute: apiState.isConversationRoute !== false
+    };
+  }
+
+  function updateLightConversationUi(message = "") {
+    if (!lightConversationButton) {
+      return;
+    }
+
+    const state = getLightConversationState();
+    const enabled = state.enabled && state.isConversationRoute;
+    lightConversationButton.disabled = !enabled;
+    lightConversationButton.dataset.action = state.collapsedCount > 0 ? "restore" : "collapse";
+    lightConversationButton.textContent = state.collapsedCount > 0 ? "恢复" : "轻量对话";
+    if (lightConversationHint) {
+      lightConversationHint.textContent =
+        message ||
+        (enabled
+          ? `隐藏较早消息，仅保留最近 ${state.keepLatest} 轮；可随时恢复。`
+          : "请先在 popup 或设置页开启长对话折叠。");
+    }
+
+    if (message) {
+      lightConversationButton.title = message;
+    } else {
+      lightConversationButton.title = enabled
+        ? `保留最近 ${state.keepLatest} 轮对话`
+        : "请先在 popup 或设置页开启长对话折叠。";
+    }
+  }
+
+  function runLightConversationAction(action) {
+    const api = globalThis.ChatGPTVoyagerCollapse;
+    if (!api || typeof api[action] !== "function") {
+      const message = "轻量对话模块还没有准备好，请稍后再试。";
+      setStatus(message);
+      updateLightConversationUi(message);
+      return;
+    }
+
+    const result = api[action]();
+    const message =
+      result?.message ||
+      (action === "collapse" ? "轻量对话已处理。" : "已恢复隐藏消息。");
+    setStatus(message);
+    updateLightConversationUi(message);
   }
 
   function sortPrompts(prompts) {
@@ -3715,6 +3788,28 @@ const chatgptHeaderEntryModule = (() => {
     header.appendChild(titleWrap);
     header.appendChild(closeButton);
 
+    const lightSection = document.createElement("section");
+    lightSection.className = "voyager-gpt-panel-light";
+
+    const lightActions = document.createElement("div");
+    lightActions.className = "voyager-gpt-panel-light-actions";
+
+    lightConversationButton = document.createElement("button");
+    lightConversationButton.type = "button";
+    lightConversationButton.className = "voyager-gpt-panel-light-button";
+    lightConversationButton.textContent = "轻量对话";
+    lightConversationButton.addEventListener("click", () => {
+      runLightConversationAction(
+        lightConversationButton?.dataset.action === "restore" ? "restore" : "collapse"
+      );
+    });
+
+    lightActions.appendChild(lightConversationButton);
+    lightConversationHint = document.createElement("p");
+    lightConversationHint.className = "voyager-gpt-panel-light-hint";
+    lightActions.appendChild(lightConversationHint);
+    lightSection.appendChild(lightActions);
+
     const promptSection = createSection(
       "prompts",
       "提示词收藏",
@@ -3934,6 +4029,7 @@ const chatgptHeaderEntryModule = (() => {
     footer.appendChild(statusElement);
 
     panel.appendChild(header);
+    panel.appendChild(lightSection);
     panel.appendChild(promptSection.section);
     panel.appendChild(historySection.section);
     panel.appendChild(footer);
@@ -4150,6 +4246,7 @@ const chatgptHeaderEntryModule = (() => {
 
   function renderPanel() {
     try {
+      updateLightConversationUi();
       renderPromptList();
       renderHistoryList();
     } catch (error) {
@@ -4177,8 +4274,16 @@ const chatgptHeaderEntryModule = (() => {
   async function refreshData() {
     const stored = await readLocalStorage({
       [STORAGE_KEYS.SAVED_PROMPTS]: [],
-      [STORAGE_KEYS.FORMULA_HISTORY]: []
+      [STORAGE_KEYS.FORMULA_HISTORY]: [],
+      chatgptLongConversationCollapseEnabled:
+        DEFAULT_SETTINGS.chatgptLongConversationCollapseEnabled,
+      chatgptCollapseKeepLatest: DEFAULT_SETTINGS.chatgptCollapseKeepLatest
     });
+
+    collapseSettings = {
+      enabled: Boolean(stored.chatgptLongConversationCollapseEnabled),
+      keepLatest: normalizeCollapseKeepLatest(stored.chatgptCollapseKeepLatest)
+    };
 
     normalizedPromptSeed = 0;
     normalizedHistorySeed = 0;
@@ -4199,6 +4304,7 @@ const chatgptHeaderEntryModule = (() => {
           .map((entry) => normalizeHistoryEntry(entry))
           .filter(Boolean)
       : [];
+    updateLightConversationUi();
     renderPanel();
   }
 
@@ -4452,6 +4558,8 @@ const chatgptHeaderEntryModule = (() => {
         panel = null;
         promptsContainer = null;
         historyContainer = null;
+        lightConversationButton = null;
+        lightConversationHint = null;
         promptEditorOverlay?.remove();
         promptEditorOverlay = null;
         promptEditorDialog = null;
@@ -4555,6 +4663,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     "formulaCopierEnabled" in changes ||
     "formulaCopyFormat" in changes ||
     "enterEnhancerEnabled" in changes ||
+    "chatgptLongConversationCollapseEnabled" in changes ||
+    "chatgptCollapseKeepLatest" in changes ||
     "notionCloseGuardEnabled" in changes
   ) {
     syncSettings().catch((error) => {
@@ -4565,7 +4675,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
   if (
     STORAGE_KEYS.FORMULA_HISTORY in changes ||
-    STORAGE_KEYS.SAVED_PROMPTS in changes
+    STORAGE_KEYS.SAVED_PROMPTS in changes ||
+    "chatgptLongConversationCollapseEnabled" in changes ||
+    "chatgptCollapseKeepLatest" in changes
   ) {
     chatgptHeaderEntryModule.refreshData().catch((error) => {
       markExtensionContextInvalidated(error);

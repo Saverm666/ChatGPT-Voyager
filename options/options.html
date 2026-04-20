@@ -199,6 +199,33 @@
               <input id="chatgpt-timeline-enabled" name="chatgptTimelineEnabled" type="checkbox" />
             </label>
 
+            <label class="feature-row" for="chatgpt-collapse-enabled">
+              <span>
+                <strong>GPT 长对话折叠</strong>
+                <small>开启后可在页内入口使用“轻量对话”，隐藏较早消息以减轻长对话负担。</small>
+              </span>
+              <input
+                id="chatgpt-collapse-enabled"
+                name="chatgptLongConversationCollapseEnabled"
+                type="checkbox"
+              />
+            </label>
+
+            <label class="feature-row" for="chatgpt-collapse-keep-latest">
+              <span>
+                <strong>长对话保留最新轮数</strong>
+                <small>点击折叠时保留最近 N 轮，一问一答算一轮，其余旧内容临时隐藏。</small>
+              </span>
+              <input
+                id="chatgpt-collapse-keep-latest"
+                name="chatgptCollapseKeepLatest"
+                type="number"
+                min="1"
+                max="1000"
+                step="1"
+              />
+            </label>
+
             <label class="feature-row" for="notion-close-guard-enabled">
               <span>
                 <strong>Notion 离开确认</strong>

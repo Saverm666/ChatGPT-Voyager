@@ -34,6 +34,8 @@
     markdownFormulaWrapMode: MARKDOWN_FORMULA_WRAP_MODES.WITH_DELIMITERS,
     enterEnhancerEnabled: true,
     chatgptTimelineEnabled: true,
+    chatgptLongConversationCollapseEnabled: false,
+    chatgptCollapseKeepLatest: 20,
     notionCloseGuardEnabled: true
   };
 
