@@ -2434,16 +2434,17 @@ const branchSelectionModule = (() => {
 // Adapted from noeqtion by voidCounter:
 // https://github.com/voidCounter/noeqtion
 const notionMathConverterModule = (() => {
-  const EQUATION_REGEX = /\$[^\$\n]*?\$/;
+  const EQUATION_REGEX = /(\$\$[\s\S]*?\$\$|\$[^\$\n]*?\$)/;
   const TIMING = {
     FOCUS: 50,
     QUICK: 20,
+    DIALOG: 100,
+    MATH_BLOCK: 100,
     POST_CONVERT: 300,
-    PASTE_SETTLE: 1200,
-    AUTO_RETRY: 700
+    PASTE_SETTLE: 900,
+    CHUNK: 20
   };
-  const MAX_AUTO_CONVERT_ATTEMPTS = 4;
-  const MAX_CONVERSION_ITERATIONS = 200;
+  const LONG_TEXT_CHUNK_SIZE = 320;
 
   let enabled = false;
   let pasteTimer = null;
@@ -2463,21 +2464,6 @@ const notionMathConverterModule = (() => {
 
   function removeInjectedCSS() {
     document.getElementById("voyager-notion-math-converter-hide-dialog")?.remove();
-  }
-
-  function getElementText(element) {
-    if (!(element instanceof Element)) {
-      return "";
-    }
-
-    return String(
-      element.getAttribute("aria-label") ||
-        element.getAttribute("data-tooltip") ||
-        element.textContent ||
-        ""
-    )
-      .replace(/\s+/g, " ")
-      .trim();
   }
 
   function getClosestEditableLeaf(node) {
@@ -2686,17 +2672,157 @@ const notionMathConverterModule = (() => {
       return;
     }
 
-    if (document.activeElement !== element && typeof element.focus === "function") {
-      element.focus();
-    }
-
     if (element.value !== undefined) {
-      element.value += text;
+      element.value = text;
       element.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
 
-    replaceSelectionWithText(text);
+    document.execCommand("insertText", false, text);
+  }
+
+  function isMathInputCandidate(element) {
+    return Boolean(
+      isEditableElement(element) &&
+        (element.closest?.('div[role="dialog"]') ||
+          element.getAttribute?.("data-content-editable-leaf") === "true")
+    );
+  }
+
+  async function waitForMathInputReady(previousEditable = null, timeoutMs = 2500) {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const active = document.activeElement;
+      if (isMathInputCandidate(active) && active !== previousEditable) {
+        return active;
+      }
+
+      const dialogEditable = document.querySelector(
+        'div[role="dialog"] [contenteditable="true"], div[role="dialog"] textarea, div[role="dialog"] input'
+      );
+      if (isMathInputCandidate(dialogEditable) && dialogEditable !== previousEditable) {
+        dialogEditable.focus();
+        return dialogEditable;
+      }
+
+      await delay(40);
+    }
+
+    return isMathInputCandidate(document.activeElement) &&
+      document.activeElement !== previousEditable
+      ? document.activeElement
+      : null;
+  }
+
+  function getEditableTextSnapshot(element) {
+    if (!element) {
+      return "";
+    }
+
+    if (typeof element.value === "string") {
+      return element.value;
+    }
+
+    return element.textContent || "";
+  }
+
+  function normalizeEditableText(text) {
+    return String(text || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async function clearSelectedEquationText(editableParent) {
+    const selection = window.getSelection();
+    selection?.deleteFromDocument();
+    await delay(TIMING.FOCUS);
+
+    const activeElement = document.activeElement;
+    if (activeElement && activeElement === editableParent) {
+      activeElement.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          inputType: "deleteContentBackward",
+          data: null
+        })
+      );
+    }
+
+    const snapshot = normalizeEditableText(getEditableTextSnapshot(editableParent));
+    return snapshot.length === 0;
+  }
+
+  async function insertLongTextInChunks(element, text) {
+    const chunks = [];
+    const source = String(text || "");
+
+    for (let i = 0; i < source.length; i += LONG_TEXT_CHUNK_SIZE) {
+      chunks.push(source.slice(i, i + LONG_TEXT_CHUNK_SIZE));
+    }
+
+    for (const chunk of chunks) {
+      insertTextIntoActiveElement(element, chunk);
+      await delay(TIMING.CHUNK);
+    }
+  }
+
+  function clickDoneButton() {
+    const doneButton = Array.from(document.querySelectorAll('[role="button"]')).find(
+      (button) => button.textContent?.includes("Done")
+    );
+
+    if (doneButton) {
+      doneButton.click();
+      return true;
+    }
+
+    return false;
+  }
+
+  async function convertDisplayEquation(latexContent, sourceEditableLeaf = null) {
+    const sourceCleared = await clearSelectedEquationText(sourceEditableLeaf);
+    if (!sourceCleared) {
+      console.warn(`[${SCRIPT_NAME}] 源块未成功清空，已跳过块级公式转换以避免重复生成。`);
+      dispatchKeyEvent("Escape", { keyCode: 27 });
+      await delay(TIMING.POST_CONVERT);
+      return;
+    }
+
+    document.execCommand("insertText", false, "/math");
+    await delay(TIMING.DIALOG);
+
+    dispatchKeyEvent("Enter", { keyCode: 13 });
+    await delay(TIMING.MATH_BLOCK);
+
+    const mathInput = await waitForMathInputReady(sourceEditableLeaf);
+    if (isEditableElement(mathInput)) {
+      await insertLongTextInChunks(mathInput, latexContent);
+
+      const snapshot = getEditableTextSnapshot(mathInput);
+      if (!snapshot || !snapshot.includes(latexContent.slice(0, Math.min(24, latexContent.length)))) {
+        await delay(TIMING.DIALOG);
+        await insertLongTextInChunks(mathInput, latexContent);
+      }
+    } else {
+      console.warn(`[${SCRIPT_NAME}] 未找到新的 Notion 公式输入框，已跳过写入以避免重复生成。`);
+      dispatchKeyEvent("Escape", { keyCode: 27 });
+      await delay(TIMING.POST_CONVERT);
+      return;
+    }
+
+    await delay(TIMING.DIALOG);
+
+    const hasError = document.querySelector('div[role="alert"]') !== null;
+    if (hasError) {
+      console.warn(`[${SCRIPT_NAME}] Notion 公式转换检测到 KaTeX 错误，已关闭对话框。`);
+      dispatchKeyEvent("Escape", { keyCode: 27 });
+    } else if (!clickDoneButton()) {
+      dispatchKeyEvent("Escape", { keyCode: 27 });
+    }
+
+    await delay(TIMING.POST_CONVERT);
   }
 
   async function convertInlineEquation(latexContent) {
@@ -2732,8 +2858,17 @@ const notionMathConverterModule = (() => {
         return false;
       }
 
-      const latexContent = equationText.slice(1, -1);
-      await convertInlineEquation(latexContent);
+      const isDisplayEquation =
+        equationText.startsWith("$$") && equationText.endsWith("$$");
+      const latexContent = isDisplayEquation
+        ? equationText.slice(2, -2).trim()
+        : equationText.slice(1, -1);
+
+      if (isDisplayEquation) {
+        await convertDisplayEquation(latexContent, editableParent);
+      } else {
+        await convertInlineEquation(latexContent);
+      }
       return true;
     } catch (error) {
       console.error(`[${SCRIPT_NAME}] Notion 公式转换失败。`, error);
@@ -2742,13 +2877,20 @@ const notionMathConverterModule = (() => {
   }
 
   async function convertMathEquations(scope = "all") {
+    injectCSS(
+      'div[role="dialog"] { opacity: 0 !important; transform: scale(0.001) !important; } ' +
+        '[role="menu"] { opacity: 0 !important; transform: scale(0.001) !important; pointer-events: none !important; } ' +
+        '[role="listbox"] { opacity: 0 !important; transform: scale(0.001) !important; pointer-events: none !important; } ' +
+        ".notion-text-action-menu { opacity: 0 !important; transform: scale(0.001) !important; pointer-events: none !important; }"
+    );
+
     let convertedCount = 0;
     let lastAttemptSignature = "";
 
     try {
       await dismissTransientNotionUi();
 
-      for (let iteration = 0; iteration < MAX_CONVERSION_ITERATIONS; iteration += 1) {
+      while (true) {
         const equations = findEquations(scope);
         if (equations.length === 0) {
           break;
@@ -2789,19 +2931,11 @@ const notionMathConverterModule = (() => {
   }
 
   async function runPasteTriggeredConversion(signature) {
-    for (let attempt = 0; attempt < MAX_AUTO_CONVERT_ATTEMPTS; attempt += 1) {
-      if (!enabled || lastPasteSignature !== signature) {
-        return;
-      }
-
-      await convertMathEquations("active");
-
-      if (!hasPendingEquations("active")) {
-        return;
-      }
-
-      await delay(TIMING.AUTO_RETRY);
+    if (!enabled || lastPasteSignature !== signature) {
+      return;
     }
+
+    await convertMathEquations("all");
   }
 
   function schedulePasteTriggeredConversion(clipboardText) {
