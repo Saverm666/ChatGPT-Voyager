@@ -1,8 +1,10 @@
 const {
   FORMULA_COPY_FORMAT_LABELS,
+  MARKDOWN_FORMULA_WRAP_LABELS,
   STORAGE_KEYS,
   DEFAULT_LOCAL_DATA,
   normalizeFormulaCopyFormat,
+  normalizeMarkdownFormulaWrapMode,
   createItemId,
   clampFormulaHistoryItems,
   renderFormulaPreview,
@@ -16,6 +18,9 @@ const settingsForm = document.getElementById("settings-form");
 const formulaCopierInput = document.getElementById("formula-copier-enabled");
 const formulaCopyFormatInputs = document.querySelectorAll(
   'input[name="formulaCopyFormat"]'
+);
+const markdownFormulaWrapModeInputs = document.querySelectorAll(
+  'input[name="markdownFormulaWrapMode"]'
 );
 const enterEnhancerInput = document.getElementById("enter-enhancer-enabled");
 const chatgptTimelineInput = document.getElementById("chatgpt-timeline-enabled");
@@ -38,6 +43,7 @@ const savedPromptsEmpty = document.getElementById("saved-prompts-empty");
 
 let settingsStatusTimer = null;
 let promptStatusTimer = null;
+let draggedPromptId = "";
 
 function getSelectedFormulaCopyFormat() {
   const checkedInput = document.querySelector(
@@ -47,8 +53,20 @@ function getSelectedFormulaCopyFormat() {
   return normalizeFormulaCopyFormat(checkedInput?.value);
 }
 
+function getSelectedMarkdownFormulaWrapMode() {
+  const checkedInput = document.querySelector(
+    'input[name="markdownFormulaWrapMode"]:checked'
+  );
+
+  return normalizeMarkdownFormulaWrapMode(checkedInput?.value);
+}
+
 function getFormulaCopyFormatLabel(value) {
   return FORMULA_COPY_FORMAT_LABELS[normalizeFormulaCopyFormat(value)];
+}
+
+function getMarkdownFormulaWrapModeLabel(value) {
+  return MARKDOWN_FORMULA_WRAP_LABELS[normalizeMarkdownFormulaWrapMode(value)];
 }
 
 function getHistorySummary(entry) {
@@ -87,6 +105,21 @@ function normalizePromptList(prompts) {
   return Array.isArray(prompts) ? prompts : [];
 }
 
+function sortPrompts(prompts) {
+  return [...normalizePromptList(prompts)].sort((a, b) => {
+    const pinnedDiff = Number(Boolean(b?.pinned)) - Number(Boolean(a?.pinned));
+    return pinnedDiff;
+  });
+}
+
+function createPinIcon() {
+  const icon = document.createElement("span");
+  icon.setAttribute("aria-hidden", "true");
+  icon.classList.add("prompt-pin-icon");
+  icon.textContent = "\u{1F4CC}\uFE0E";
+  return icon;
+}
+
 function normalizeFormulaHistory(history) {
   return Array.isArray(history) ? history : [];
 }
@@ -108,13 +141,18 @@ function startPromptEdit(prompt) {
 }
 
 function renderSavedPrompts(prompts) {
-  const items = normalizePromptList(prompts);
+  const items = sortPrompts(prompts);
   savedPromptsList.textContent = "";
   savedPromptsEmpty.hidden = items.length > 0;
 
   items.forEach((prompt) => {
     const card = document.createElement("article");
     card.className = "prompt-card";
+    card.dataset.id = prompt.id;
+    card.draggable = !prompt.pinned;
+    if (!prompt.pinned) {
+      card.classList.add("prompt-card-draggable");
+    }
 
     const head = document.createElement("div");
     head.className = "prompt-card-head";
@@ -123,7 +161,14 @@ function renderSavedPrompts(prompts) {
 
     const title = document.createElement("h3");
     title.className = "prompt-card-title";
-    title.textContent = prompt.name || "未命名提示词";
+    if (prompt.pinned) {
+      const pinIcon = document.createElement("span");
+      pinIcon.className = "prompt-card-pin";
+      pinIcon.setAttribute("aria-hidden", "true");
+      pinIcon.appendChild(createPinIcon());
+      title.appendChild(pinIcon);
+    }
+    title.appendChild(document.createTextNode(prompt.name || "未命名提示词"));
 
     const time = document.createElement("p");
     time.className = "prompt-card-time";
@@ -139,6 +184,7 @@ function renderSavedPrompts(prompts) {
 
     [
       ["copy", "复制"],
+      [prompt.pinned ? "unpin" : "pin", prompt.pinned ? "取消置顶" : "置顶"],
       ["edit", "编辑"],
       ["delete", "删除"]
     ].forEach(([action, label]) => {
@@ -208,11 +254,28 @@ async function getSavedPrompts() {
 }
 
 async function persistPrompts(prompts, message) {
+  const nextPrompts = sortPrompts(prompts);
   await chrome.storage.local.set({
-    [STORAGE_KEYS.SAVED_PROMPTS]: prompts
+    [STORAGE_KEYS.SAVED_PROMPTS]: nextPrompts
   });
-  renderSavedPrompts(prompts);
+  renderSavedPrompts(nextPrompts);
   setTransientStatus(promptStatus, "prompt", message);
+}
+
+function reorderNonPinnedPrompts(prompts, sourceId, targetId) {
+  const sorted = sortPrompts(prompts);
+  const pinned = sorted.filter((prompt) => prompt.pinned);
+  const nonPinned = sorted.filter((prompt) => !prompt.pinned);
+  const fromIndex = nonPinned.findIndex((prompt) => prompt.id === sourceId);
+  const toIndex = nonPinned.findIndex((prompt) => prompt.id === targetId);
+
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+    return sorted;
+  }
+
+  const [moved] = nonPinned.splice(fromIndex, 1);
+  nonPinned.splice(toIndex, 0, moved);
+  return [...pinned, ...nonPinned];
 }
 
 async function copyFormulaHistoryEntry(entry) {
@@ -249,6 +312,12 @@ async function loadSettings() {
   formulaCopyFormatInputs.forEach((input) => {
     input.checked = input.value === currentFormat;
   });
+  const currentMarkdownWrapMode = normalizeMarkdownFormulaWrapMode(
+    settings.markdownFormulaWrapMode
+  );
+  markdownFormulaWrapModeInputs.forEach((input) => {
+    input.checked = input.value === currentMarkdownWrapMode;
+  });
 
   enterEnhancerInput.checked = Boolean(settings.enterEnhancerEnabled);
   chatgptTimelineInput.checked = Boolean(settings.chatgptTimelineEnabled);
@@ -270,10 +339,12 @@ settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const formulaCopyFormat = getSelectedFormulaCopyFormat();
+  const markdownFormulaWrapMode = getSelectedMarkdownFormulaWrapMode();
 
   await chrome.storage.local.set({
     formulaCopierEnabled: formulaCopierInput.checked,
     formulaCopyFormat,
+    markdownFormulaWrapMode,
     enterEnhancerEnabled: enterEnhancerInput.checked,
     chatgptTimelineEnabled: chatgptTimelineInput.checked,
     notionCloseGuardEnabled: notionCloseGuardInput.checked
@@ -282,7 +353,7 @@ settingsForm.addEventListener("submit", async (event) => {
   setTransientStatus(
     saveStatus,
     "settings",
-    `设置已保存。当前公式复制格式：${FORMULA_COPY_FORMAT_LABELS[formulaCopyFormat]}。`
+    `设置已保存。点击公式：${FORMULA_COPY_FORMAT_LABELS[formulaCopyFormat]}；成段复制：${getMarkdownFormulaWrapModeLabel(markdownFormulaWrapMode)}。`
   );
 });
 
@@ -378,6 +449,22 @@ savedPromptsList.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "pin" || action === "unpin") {
+    const nextPrompts = prompts.map((prompt) =>
+      prompt.id === promptId
+        ? {
+            ...prompt,
+            pinned: action === "pin"
+          }
+        : prompt
+    );
+    await persistPrompts(
+      nextPrompts,
+      `提示词「${currentPrompt.name}」${action === "pin" ? "已置顶" : "已取消置顶"}。`
+    );
+    return;
+  }
+
   if (action === "delete") {
     const confirmed = window.confirm(`确认删除提示词「${currentPrompt.name}」吗？`);
 
@@ -394,6 +481,74 @@ savedPromptsList.addEventListener("click", async (event) => {
   }
 });
 
+savedPromptsList.addEventListener("dragstart", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const card = target.closest(".prompt-card-draggable");
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+
+  draggedPromptId = card.dataset.id || "";
+  card.classList.add("is-dragging");
+  event.dataTransfer?.setData("text/plain", draggedPromptId);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+});
+
+savedPromptsList.addEventListener("dragend", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    target.closest(".prompt-card")?.classList.remove("is-dragging");
+  }
+});
+
+savedPromptsList.addEventListener("dragover", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const card = target.closest(".prompt-card-draggable");
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+});
+
+savedPromptsList.addEventListener("drop", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const card = target.closest(".prompt-card-draggable");
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  const targetId = card.dataset.id || "";
+  const sourceId = draggedPromptId || event.dataTransfer?.getData("text/plain") || "";
+  draggedPromptId = "";
+
+  if (!sourceId || !targetId || sourceId === targetId) {
+    return;
+  }
+
+  const prompts = await getSavedPrompts();
+  const nextPrompts = reorderNonPinnedPrompts(prompts, sourceId, targetId);
+  await persistPrompts(nextPrompts, "提示词顺序已更新。");
+});
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") {
     return;
@@ -402,6 +557,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (
     "formulaCopierEnabled" in changes ||
     "formulaCopyFormat" in changes ||
+    "markdownFormulaWrapMode" in changes ||
     "enterEnhancerEnabled" in changes ||
     "chatgptTimelineEnabled" in changes ||
     "notionCloseGuardEnabled" in changes ||

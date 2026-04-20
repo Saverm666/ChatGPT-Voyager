@@ -2,10 +2,12 @@ const SCRIPT_NAME = "ChatGPTVoyagerExtension";
 const {
   FORMULA_COPY_FORMATS,
   FORMULA_COPY_FORMAT_LABELS,
+  MARKDOWN_FORMULA_WRAP_MODES,
   STORAGE_KEYS,
   DEFAULT_SETTINGS,
   createItemId,
   normalizeFormulaCopyFormat,
+  normalizeMarkdownFormulaWrapMode,
   clampFormulaHistoryItems,
   renderFormulaPreview,
   truncateText,
@@ -14,6 +16,7 @@ const {
   saveFormulaHistoryEntry
 } = globalThis.ChatGPTVoyagerShared;
 const DEFAULT_FORMULA_COPY_FORMAT = DEFAULT_SETTINGS.formulaCopyFormat;
+const DEFAULT_MARKDOWN_FORMULA_WRAP_MODE = DEFAULT_SETTINGS.markdownFormulaWrapMode;
 let extensionContextAvailable = true;
 let handleExtensionContextInvalidated = null;
 
@@ -97,6 +100,14 @@ function reportScriptError(message, error) {
   }
 
   console.error(message, error);
+}
+
+function createPinIcon() {
+  const icon = document.createElement("span");
+  icon.setAttribute("aria-hidden", "true");
+  icon.classList.add("voyager-pin-icon");
+  icon.textContent = "\u{1F4CC}\uFE0E";
+  return icon;
 }
 
 function waitForValue(resolveValue, options = {}) {
@@ -541,6 +552,7 @@ const formulaCopierModule = (() => {
 const markdownCopyModule = (() => {
   let enabled = false;
   let lastCopyPayload = "";
+  let formulaWrapMode = DEFAULT_MARKDOWN_FORMULA_WRAP_MODE;
   const BLOCK_TAGS = new Set([
     "address",
     "article",
@@ -831,7 +843,11 @@ const markdownCopyModule = (() => {
         return "";
       }
 
-      return isDisplayFormulaElement(node) ? `\n${latex}\n` : latex;
+      if (formulaWrapMode === MARKDOWN_FORMULA_WRAP_MODES.BARE) {
+        return isDisplayFormulaElement(node) ? `\n${latex}\n` : latex;
+      }
+
+      return isDisplayFormulaElement(node) ? `\n$$${latex}$$\n` : `$${latex}$`;
     }
 
     const tagName = node.tagName.toLowerCase();
@@ -1042,6 +1058,10 @@ const markdownCopyModule = (() => {
   }
 
   return {
+    setFormulaWrapMode(nextMode) {
+      formulaWrapMode = normalizeMarkdownFormulaWrapMode(nextMode);
+    },
+
     enable() {
       if (enabled || !isChatGPTPage) {
         return;
@@ -2411,6 +2431,466 @@ const branchSelectionModule = (() => {
   };
 })();
 
+// Adapted from noeqtion by voidCounter:
+// https://github.com/voidCounter/noeqtion
+const notionMathConverterModule = (() => {
+  const EQUATION_REGEX = /\$[^\$\n]*?\$/;
+  const TIMING = {
+    FOCUS: 50,
+    QUICK: 20,
+    POST_CONVERT: 300,
+    PASTE_SETTLE: 1200,
+    AUTO_RETRY: 700
+  };
+  const MAX_AUTO_CONVERT_ATTEMPTS = 4;
+  const MAX_CONVERSION_ITERATIONS = 200;
+
+  let enabled = false;
+  let pasteTimer = null;
+  let lastPasteSignature = "";
+
+  function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function injectCSS(css) {
+    const style = document.createElement("style");
+    style.type = "text/css";
+    style.id = "voyager-notion-math-converter-hide-dialog";
+    style.appendChild(document.createTextNode(css));
+    document.head.appendChild(style);
+  }
+
+  function removeInjectedCSS() {
+    document.getElementById("voyager-notion-math-converter-hide-dialog")?.remove();
+  }
+
+  function getElementText(element) {
+    if (!(element instanceof Element)) {
+      return "";
+    }
+
+    return String(
+      element.getAttribute("aria-label") ||
+        element.getAttribute("data-tooltip") ||
+        element.textContent ||
+        ""
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function getClosestEditableLeaf(node) {
+    if (!node) {
+      return null;
+    }
+
+    const element = node instanceof Element ? node : node.parentElement;
+    return element?.closest?.('[data-content-editable-leaf="true"]') || null;
+  }
+
+  function getCurrentEditableLeaf() {
+    const fromActiveElement = getClosestEditableLeaf(document.activeElement);
+    if (fromActiveElement) {
+      return fromActiveElement;
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+      return null;
+    }
+
+    return (
+      getClosestEditableLeaf(selection.anchorNode) ||
+      getClosestEditableLeaf(selection.focusNode)
+    );
+  }
+
+  function isInsideTransientUi(node) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    return Boolean(
+      element?.closest?.(
+        'div[role="dialog"], [role="menu"], [role="listbox"], [role="tooltip"], [data-overlay-container="true"]'
+      )
+    );
+  }
+
+  function isTextNodeConvertible(node) {
+    if (!(node instanceof Text) || !node.nodeValue || !EQUATION_REGEX.test(node.nodeValue)) {
+      return false;
+    }
+
+    const parentElement = node.parentElement;
+    if (!(parentElement instanceof Element)) {
+      return false;
+    }
+
+    if (!getClosestEditableLeaf(parentElement)) {
+      return false;
+    }
+
+    if (isInsideTransientUi(parentElement)) {
+      return false;
+    }
+
+    if (
+      parentElement.closest(
+        "style, script, textarea, code, pre, .katex, .katex-display, mjx-container"
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async function dismissTransientNotionUi() {
+    dispatchKeyEvent("Escape", { keyCode: 27 });
+    await delay(30);
+    dispatchKeyEvent("Escape", { keyCode: 27 });
+    await delay(60);
+
+    const editableLeaf =
+      getCurrentEditableLeaf() ||
+      document.querySelector('[data-content-editable-leaf="true"]');
+    if (editableLeaf instanceof HTMLElement) {
+      editableLeaf.click();
+      await delay(TIMING.FOCUS);
+    }
+  }
+
+  function findEquations(scope = "all") {
+    const textNodes = [];
+    const searchRoots = [];
+    const activeLeaf = getCurrentEditableLeaf();
+
+    if (scope === "active" && activeLeaf) {
+      searchRoots.push(activeLeaf);
+    } else {
+      if (activeLeaf) {
+        searchRoots.push(activeLeaf);
+      }
+      searchRoots.push(document.body);
+    }
+
+    const visitedRoots = new Set();
+
+    for (const root of searchRoots) {
+      if (!(root instanceof Node) || visitedRoots.has(root)) {
+        continue;
+      }
+
+      visitedRoots.add(root);
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          return isTextNodeConvertible(node)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP;
+        }
+      });
+
+      let node = null;
+      while ((node = walker.nextNode())) {
+        textNodes.push(node);
+      }
+    }
+
+    if (scope === "active") {
+      return textNodes;
+    }
+
+    return textNodes.filter((node, index) => textNodes.indexOf(node) === index);
+  }
+
+  function findEditableParent(node) {
+    let parent = node?.parentElement || null;
+    while (
+      parent &&
+      parent.getAttribute("data-content-editable-leaf") !== "true"
+    ) {
+      parent = parent.parentElement;
+    }
+    return parent;
+  }
+
+  function selectText(node, startIndex, length) {
+    const range = document.createRange();
+    range.setStart(node, startIndex);
+    range.setEnd(node, startIndex + length);
+
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  function isEditableElement(element) {
+    return Boolean(
+      element &&
+      (element.isContentEditable ||
+        element.tagName === "INPUT" ||
+        element.tagName === "TEXTAREA")
+    );
+  }
+
+  function dispatchKeyEvent(key, options = {}) {
+    const activeElement = document.activeElement;
+    if (!activeElement) {
+      return;
+    }
+
+    activeElement.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key,
+        code: options.code || `Key${String(key).toUpperCase()}`,
+        keyCode: options.keyCode || 0,
+        which: options.keyCode || 0,
+        ctrlKey: Boolean(options.ctrlKey),
+        shiftKey: Boolean(options.shiftKey),
+        bubbles: true,
+        cancelable: true
+      })
+    );
+  }
+
+  function replaceSelectionWithText(text) {
+    const normalizedText = String(text || "");
+    if (!normalizedText) {
+      return;
+    }
+
+    if (document.queryCommandSupported?.("insertText")) {
+      const inserted = document.execCommand("insertText", false, normalizedText);
+      if (inserted) {
+        return;
+      }
+    }
+
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(normalizedText);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    textNode.parentElement?.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  }
+
+  function insertTextIntoActiveElement(element, text) {
+    if (!element) {
+      return;
+    }
+
+    if (document.activeElement !== element && typeof element.focus === "function") {
+      element.focus();
+    }
+
+    if (element.value !== undefined) {
+      element.value += text;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+
+    replaceSelectionWithText(text);
+  }
+
+  async function convertInlineEquation(latexContent) {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) {
+      console.warn(`[${SCRIPT_NAME}] 没有选中可转换的行内公式文本。`);
+      return;
+    }
+
+    document.execCommand("insertText", false, `$$${latexContent}$$`);
+    await delay(TIMING.POST_CONVERT);
+  }
+
+  async function convertSingleEquation(node, equationText) {
+    try {
+      const startIndex = node.nodeValue.indexOf(equationText);
+      if (startIndex === -1) {
+        return false;
+      }
+
+      const editableParent = findEditableParent(node);
+      if (!editableParent) {
+        return false;
+      }
+
+      editableParent.click();
+      await delay(TIMING.FOCUS);
+      selectText(node, startIndex, equationText.length);
+      await delay(TIMING.QUICK);
+
+      const selection = window.getSelection();
+      if (!selection?.rangeCount || selection.toString() !== equationText) {
+        return false;
+      }
+
+      const latexContent = equationText.slice(1, -1);
+      await convertInlineEquation(latexContent);
+      return true;
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] Notion 公式转换失败。`, error);
+      return false;
+    }
+  }
+
+  async function convertMathEquations(scope = "all") {
+    let convertedCount = 0;
+    let lastAttemptSignature = "";
+
+    try {
+      await dismissTransientNotionUi();
+
+      for (let iteration = 0; iteration < MAX_CONVERSION_ITERATIONS; iteration += 1) {
+        const equations = findEquations(scope);
+        if (equations.length === 0) {
+          break;
+        }
+
+        const node = equations[0];
+        const match = node.nodeValue?.match(EQUATION_REGEX);
+        if (!match?.[0]) {
+          break;
+        }
+
+        const attemptSignature = `${match[0]}::${node.nodeValue}`;
+        if (attemptSignature === lastAttemptSignature) {
+          console.warn(`[${SCRIPT_NAME}] 同一公式连续转换未产生进展，已停止本轮转换。`, {
+            equation: match[0]
+          });
+          break;
+        }
+
+        const converted = await convertSingleEquation(node, match[0]);
+        if (!converted) {
+          lastAttemptSignature = attemptSignature;
+          break;
+        }
+
+        convertedCount += 1;
+        lastAttemptSignature = "";
+      }
+    } finally {
+      removeInjectedCSS();
+    }
+
+    return convertedCount;
+  }
+
+  function hasPendingEquations(scope = "active") {
+    return findEquations(scope).length > 0;
+  }
+
+  async function runPasteTriggeredConversion(signature) {
+    for (let attempt = 0; attempt < MAX_AUTO_CONVERT_ATTEMPTS; attempt += 1) {
+      if (!enabled || lastPasteSignature !== signature) {
+        return;
+      }
+
+      await convertMathEquations("active");
+
+      if (!hasPendingEquations("active")) {
+        return;
+      }
+
+      await delay(TIMING.AUTO_RETRY);
+    }
+  }
+
+  function schedulePasteTriggeredConversion(clipboardText) {
+    const text = String(clipboardText || "").trim();
+    if (!text || !EQUATION_REGEX.test(text)) {
+      return;
+    }
+
+    const signature = `${Date.now()}:${text.slice(0, 200)}`;
+    lastPasteSignature = signature;
+
+    if (pasteTimer) {
+      window.clearTimeout(pasteTimer);
+      pasteTimer = null;
+    }
+
+    pasteTimer = window.setTimeout(() => {
+      pasteTimer = null;
+      if (lastPasteSignature !== signature) {
+        return;
+      }
+
+      runPasteTriggeredConversion(signature).catch((error) => {
+        console.error(`[${SCRIPT_NAME}] Notion 粘贴后公式自动转换失败。`, error);
+      });
+    }, TIMING.PASTE_SETTLE);
+  }
+
+  function handleKeyDown(event) {
+    if (
+      event.ctrlKey &&
+      event.altKey &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      (event.key === "M" || event.key === "m")
+    ) {
+      event.preventDefault();
+      convertMathEquations("all").catch((error) => {
+        console.error(`[${SCRIPT_NAME}] Notion 公式批量转换失败。`, error);
+      });
+    }
+  }
+
+  function handlePaste(event) {
+    if (!enabled || !(event instanceof ClipboardEvent)) {
+      return;
+    }
+
+    const clipboardText = event.clipboardData?.getData("text/plain") || "";
+    if (!clipboardText || !clipboardText.includes("$")) {
+      return;
+    }
+
+    schedulePasteTriggeredConversion(clipboardText);
+  }
+
+  return {
+    enable() {
+      if (enabled || !isNotionPage) {
+        return;
+      }
+
+      enabled = true;
+      document.addEventListener("keydown", handleKeyDown, true);
+      document.addEventListener("paste", handlePaste, true);
+      console.log(
+        `[${SCRIPT_NAME}] Notion 公式转换已开启。快捷键：Ctrl+Alt+M，粘贴含 $ / $$ 时会自动尝试转换。来源：voidCounter/noeqtion`
+      );
+    },
+
+    disable() {
+      if (!enabled) {
+        return;
+      }
+
+      enabled = false;
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("paste", handlePaste, true);
+      if (pasteTimer) {
+        window.clearTimeout(pasteTimer);
+        pasteTimer = null;
+      }
+      lastPasteSignature = "";
+      removeInjectedCSS();
+      console.log(`[${SCRIPT_NAME}] Notion 公式转换已关闭。`);
+    }
+  };
+})();
+
 const notionCloseGuardModule = (() => {
   let enabled = false;
 
@@ -2473,6 +2953,7 @@ const chatgptHeaderEntryModule = (() => {
   let lastRootEntryHeightPx = "";
   let cachedPrompts = [];
   let cachedHistory = [];
+  let draggedPromptId = "";
   let normalizedPromptSeed = 0;
   let normalizedHistorySeed = 0;
   const HEADER_SHARE_BUTTON_SELECTOR =
@@ -2520,6 +3001,29 @@ const chatgptHeaderEntryModule = (() => {
     return `${formatLabel} · ${timeLabel}`;
   }
 
+  function sortPrompts(prompts) {
+    return [...(Array.isArray(prompts) ? prompts : [])].sort((a, b) => {
+      const pinnedDiff = Number(Boolean(b?.pinned)) - Number(Boolean(a?.pinned));
+      return pinnedDiff;
+    });
+  }
+
+  function reorderNonPinnedPrompts(prompts, sourceId, targetId) {
+    const sorted = sortPrompts(prompts);
+    const pinned = sorted.filter((prompt) => prompt.pinned);
+    const nonPinned = sorted.filter((prompt) => !prompt.pinned);
+    const fromIndex = nonPinned.findIndex((prompt) => prompt.id === sourceId);
+    const toIndex = nonPinned.findIndex((prompt) => prompt.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+      return sorted;
+    }
+
+    const [moved] = nonPinned.splice(fromIndex, 1);
+    nonPinned.splice(toIndex, 0, moved);
+    return [...pinned, ...nonPinned];
+  }
+
   function normalizePromptEntry(entry) {
     if (typeof entry === "string") {
       normalizedPromptSeed += 1;
@@ -2528,7 +3032,8 @@ const chatgptHeaderEntryModule = (() => {
         id: `legacy-prompt-${normalizedPromptSeed}`,
         name: `提示词 ${normalizedPromptSeed}`,
         content: entry,
-        updatedAt: 0
+        updatedAt: 0,
+        pinned: false
       };
     }
 
@@ -2554,7 +3059,8 @@ const chatgptHeaderEntryModule = (() => {
       updatedAt:
         typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
           ? entry.updatedAt
-          : 0
+          : 0,
+      pinned: Boolean(entry.pinned)
     };
   }
 
@@ -2684,17 +3190,23 @@ const chatgptHeaderEntryModule = (() => {
       ? stored[STORAGE_KEYS.SAVED_PROMPTS]
           .map((entry) => normalizePromptEntry(entry))
           .filter(Boolean)
+          .sort((a, b) => {
+            const pinnedDiff = Number(Boolean(b?.pinned)) - Number(Boolean(a?.pinned));
+            if (pinnedDiff !== 0) return pinnedDiff;
+            return (b?.updatedAt || 0) - (a?.updatedAt || 0);
+          })
       : [];
   }
 
   async function persistPromptList(prompts, message) {
+    const nextPrompts = sortPrompts(prompts);
     await writeLocalStorage({
-      [STORAGE_KEYS.SAVED_PROMPTS]: prompts
+      [STORAGE_KEYS.SAVED_PROMPTS]: nextPrompts
     });
 
     normalizedPromptSeed = 0;
-    cachedPrompts = Array.isArray(prompts)
-      ? prompts.map((entry) => normalizePromptEntry(entry)).filter(Boolean)
+    cachedPrompts = Array.isArray(nextPrompts)
+      ? sortPrompts(nextPrompts.map((entry) => normalizePromptEntry(entry)).filter(Boolean))
       : [];
     renderPromptList();
     setStatus(message);
@@ -3331,23 +3843,36 @@ const chatgptHeaderEntryModule = (() => {
       return;
     }
 
-    cachedPrompts.slice(0, 8).forEach((prompt) => {
-      const item = document.createElement("button");
-      item.type = "button";
+    sortPrompts(cachedPrompts).slice(0, 8).forEach((prompt) => {
+      const item = document.createElement("article");
       item.className = "voyager-gpt-panel-item";
+      item.dataset.id = prompt.id;
+      item.draggable = !prompt.pinned;
+      if (!prompt.pinned) {
+        item.classList.add("voyager-gpt-panel-item-draggable");
+      }
+
+      const contentButton = document.createElement("button");
+      contentButton.type = "button";
+      contentButton.className = "voyager-gpt-panel-item-button";
+
+      const topRow = document.createElement("span");
+      topRow.className = "voyager-gpt-panel-item-row";
 
       const title = document.createElement("span");
       title.className = "voyager-gpt-panel-item-title";
       title.textContent = prompt.name || "未命名提示词";
 
+      topRow.appendChild(title);
+
       const preview = document.createElement("span");
       preview.className = "voyager-gpt-panel-item-meta";
       preview.textContent = truncateText(prompt.content, 80) || "提示词内容为空";
 
-      item.appendChild(title);
-      item.appendChild(preview);
-      item.title = "左键复制，右键编辑";
-      item.addEventListener("click", async () => {
+      contentButton.appendChild(topRow);
+      contentButton.appendChild(preview);
+      contentButton.title = "左键复制，右键编辑";
+      contentButton.addEventListener("click", async () => {
         const content = String(prompt.content || "").trim();
 
         if (!content) {
@@ -3358,12 +3883,92 @@ const chatgptHeaderEntryModule = (() => {
         await copyTextToClipboard(content);
         setStatus(`提示词「${prompt.name || "未命名"}」已复制。`);
       });
-      item.addEventListener("contextmenu", (event) => {
+      contentButton.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         event.stopPropagation();
         startPromptEdit(prompt);
       });
 
+      const pinButton = document.createElement("button");
+      pinButton.type = "button";
+      pinButton.className = "voyager-gpt-panel-pin-button";
+      if (prompt.pinned) {
+        pinButton.classList.add("is-active");
+      }
+      pinButton.setAttribute("aria-label", prompt.pinned ? "取消置顶" : "置顶");
+      pinButton.title = prompt.pinned ? "取消置顶" : "置顶";
+      pinButton.appendChild(createPinIcon());
+      pinButton.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        try {
+          const prompts = await getStoredPrompts();
+          const nextPrompts = prompts.map((entry) =>
+            entry.id === prompt.id
+              ? {
+                  ...entry,
+                  pinned: !entry.pinned,
+                  updatedAt: entry.updatedAt || Date.now()
+                }
+              : entry
+          );
+          await persistPromptList(
+            nextPrompts,
+            `提示词「${prompt.name || "未命名提示词"}」${prompt.pinned ? "已取消置顶" : "已置顶"}。`
+          );
+        } catch (error) {
+          reportScriptError(`[${SCRIPT_NAME}] 更新提示词置顶状态失败。`, error);
+          setStatus("更新提示词置顶状态失败。");
+        }
+      });
+
+      item.appendChild(contentButton);
+      item.appendChild(pinButton);
+      item.addEventListener("dragstart", (event) => {
+        if (prompt.pinned) {
+          event.preventDefault();
+          return;
+        }
+        draggedPromptId = prompt.id || "";
+        item.classList.add("is-dragging");
+        event.dataTransfer?.setData("text/plain", draggedPromptId);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+        }
+      });
+      item.addEventListener("dragend", () => {
+        item.classList.remove("is-dragging");
+      });
+      item.addEventListener("dragover", (event) => {
+        if (prompt.pinned) {
+          return;
+        }
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+      });
+      item.addEventListener("drop", async (event) => {
+        if (prompt.pinned) {
+          return;
+        }
+        event.preventDefault();
+        const sourceId = draggedPromptId || event.dataTransfer?.getData("text/plain") || "";
+        draggedPromptId = "";
+        if (!sourceId || sourceId === prompt.id) {
+          return;
+        }
+
+        try {
+          const prompts = await getStoredPrompts();
+          const nextPrompts = reorderNonPinnedPrompts(prompts, sourceId, prompt.id);
+          await persistPromptList(nextPrompts, "提示词顺序已更新。");
+        } catch (error) {
+          reportScriptError(`[${SCRIPT_NAME}] 更新页内提示词顺序失败。`, error);
+          setStatus("更新提示词顺序失败。");
+        }
+      });
       promptsContainer.appendChild(item);
     });
   }
@@ -3462,6 +4067,11 @@ const chatgptHeaderEntryModule = (() => {
     cachedPrompts = Array.isArray(stored[STORAGE_KEYS.SAVED_PROMPTS])
       ? stored[STORAGE_KEYS.SAVED_PROMPTS]
           .map((entry) => normalizePromptEntry(entry))
+          .sort((a, b) => {
+            const pinnedDiff = Number(Boolean(b?.pinned)) - Number(Boolean(a?.pinned));
+            if (pinnedDiff !== 0) return pinnedDiff;
+            return (b?.updatedAt || 0) - (a?.updatedAt || 0);
+          })
           .filter(Boolean)
       : [];
     cachedHistory = Array.isArray(stored[STORAGE_KEYS.FORMULA_HISTORY])
@@ -3753,6 +4363,7 @@ handleExtensionContextInvalidated = () => {
   markdownCopyModule.disable();
   branchSelectionModule.disable();
   chatgptHeaderEntryModule.disable();
+  notionMathConverterModule.disable();
 };
 
 function getFeatureSupportSummary() {
@@ -3773,6 +4384,7 @@ function applySettings(settings) {
   }
 
   formulaCopierModule.setCopyFormat(settings.formulaCopyFormat);
+  markdownCopyModule.setFormulaWrapMode(settings.markdownFormulaWrapMode);
 
   if (settings.formulaCopierEnabled) {
     formulaCopierModule.enable();
@@ -3790,6 +4402,10 @@ function applySettings(settings) {
     notionCloseGuardModule.enable();
   } else {
     notionCloseGuardModule.disable();
+  }
+
+  if (isNotionPage) {
+    notionMathConverterModule.enable();
   }
 }
 

@@ -1,8 +1,10 @@
 const {
   FORMULA_COPY_FORMAT_LABELS,
+  MARKDOWN_FORMULA_WRAP_LABELS,
   STORAGE_KEYS,
   DEFAULT_LOCAL_DATA,
   normalizeFormulaCopyFormat,
+  normalizeMarkdownFormulaWrapMode,
   clampFormulaHistoryItems,
   renderFormulaPreview,
   truncateText,
@@ -19,6 +21,9 @@ const formulaCopierToggle = document.getElementById("formula-copier-enabled");
 const formulaCopyFormatInputs = document.querySelectorAll(
   'input[name="formula-copy-format"]'
 );
+const markdownFormulaWrapModeInputs = document.querySelectorAll(
+  'input[name="markdown-formula-wrap-mode"]'
+);
 const enterEnhancerToggle = document.getElementById("enter-enhancer-enabled");
 const chatgptTimelineToggle = document.getElementById("chatgpt-timeline-enabled");
 const notionCloseGuardToggle = document.getElementById(
@@ -33,6 +38,10 @@ const openOptionsButton = document.getElementById("open-options");
 
 function getFormulaCopyFormatLabel(value) {
   return FORMULA_COPY_FORMAT_LABELS[normalizeFormulaCopyFormat(value)];
+}
+
+function getMarkdownFormulaWrapModeLabel(value) {
+  return MARKDOWN_FORMULA_WRAP_LABELS[normalizeMarkdownFormulaWrapMode(value)];
 }
 
 async function getCurrentTab() {
@@ -111,6 +120,13 @@ function getHistorySummary(entry) {
   return `${formatLabel} · ${timeLabel}`;
 }
 
+function sortPrompts(prompts) {
+  return [...(Array.isArray(prompts) ? prompts : [])].sort((a, b) => {
+    const pinnedDiff = Number(Boolean(b?.pinned)) - Number(Boolean(a?.pinned));
+    return pinnedDiff;
+  });
+}
+
 function renderFormulaHistory(history) {
   const items = clampFormulaHistoryItems(history);
   formulaHistoryList.textContent = "";
@@ -146,7 +162,7 @@ function renderFormulaHistory(history) {
 }
 
 function renderSavedPrompts(prompts) {
-  const items = Array.isArray(prompts) ? prompts : [];
+  const items = sortPrompts(prompts);
   savedPromptsList.textContent = "";
   savedPromptsEmpty.hidden = items.length > 0;
 
@@ -160,7 +176,7 @@ function renderSavedPrompts(prompts) {
 
     const title = document.createElement("span");
     title.className = "item-title";
-    title.textContent = prompt.name || "未命名提示词";
+    title.textContent = `${prompt.pinned ? "📌 " : ""}${prompt.name || "未命名提示词"}`;
     head.appendChild(title);
 
     const preview = document.createElement("p");
@@ -194,6 +210,12 @@ async function loadSettings() {
   const currentFormat = normalizeFormulaCopyFormat(settings.formulaCopyFormat);
   formulaCopyFormatInputs.forEach((input) => {
     input.checked = input.value === currentFormat;
+  });
+  const currentMarkdownWrapMode = normalizeMarkdownFormulaWrapMode(
+    settings.markdownFormulaWrapMode
+  );
+  markdownFormulaWrapModeInputs.forEach((input) => {
+    input.checked = input.value === currentMarkdownWrapMode;
   });
   enterEnhancerToggle.checked = Boolean(settings.enterEnhancerEnabled);
   chatgptTimelineToggle.checked = Boolean(settings.chatgptTimelineEnabled);
@@ -281,6 +303,22 @@ formulaCopyFormatInputs.forEach((input) => {
   });
 });
 
+markdownFormulaWrapModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    const mode = normalizeMarkdownFormulaWrapMode(input.value);
+
+    saveSettings(
+      {
+        markdownFormulaWrapMode: mode
+      },
+      `成段复制公式格式已切换为：${getMarkdownFormulaWrapModeLabel(mode)}。`
+    ).catch((error) => {
+      status.textContent =
+        error instanceof Error ? error.message : "保存成段复制公式格式失败。";
+    });
+  });
+});
+
 enterEnhancerToggle.addEventListener("change", () => {
   saveSettings(
     {
@@ -343,6 +381,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (
     "formulaCopierEnabled" in changes ||
     "formulaCopyFormat" in changes ||
+    "markdownFormulaWrapMode" in changes ||
     "enterEnhancerEnabled" in changes ||
     "chatgptTimelineEnabled" in changes ||
     "notionCloseGuardEnabled" in changes ||

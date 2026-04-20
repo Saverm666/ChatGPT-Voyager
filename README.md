@@ -57,6 +57,11 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 - 离开确认
   - 当页面关闭、刷新或跳转时弹出确认提示
   - 适合编辑中、复制中或临时整理内容时防止误操作
+- LaTeX 公式批量转换
+  - 在 Notion 页面按 `Ctrl+Alt+M`，可将页面中的 `$...$` 与 `$$...$$` 转成 Notion 原生公式
+  - 此能力基于开源项目 [voidCounter/noeqtion](https://github.com/voidCounter/noeqtion) 的实现思路接入
+  - 当你在 Notion 中粘贴的文本里包含 `$` 或 `$$` 时，扩展也会自动延迟触发一次转换，并尝试收起粘贴后的建议操作菜单
+  - 对于较长的块级公式，扩展会等待公式输入框就绪后分段写入，以提高转换稳定性
 
 ## 支持站点
 
@@ -70,7 +75,7 @@ ChatGPT-Voyager 是一个可直接本地加载的 Chrome 扩展，基于 Manifes
 说明：
 
 - ChatGPT 页面支持公式复制、GPT 会话时间线、提示词入口与 `Enter / Ctrl+Enter` 增强
-- Notion 页面支持离开确认
+- Notion 页面支持离开确认与 LaTeX 公式批量转换
 - 其他站点默认不会注入这些功能
 
 ## 安装方式
@@ -228,6 +233,7 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 - 公式点击复制
 - ChatGPT 输入增强
 - Notion 离开确认
+- Notion LaTeX 公式批量转换
 - ChatGPT 页内快捷入口与浮层面板
 
 ### `content/timeline.js`
@@ -309,6 +315,9 @@ ChatGPT-Voyager 只申请了最小化的本地权限：
 - `chatgpt-conversation-timeline`
   - 用作 GPT 时间线功能的参考实现
   - 参考仓库位于 `references/chatgpt-conversation-timeline/`
+- `noeqtion`
+  - 用作 Notion LaTeX 公式批量转换的实现参考
+  - 参考仓库为 [voidCounter/noeqtion](https://github.com/voidCounter/noeqtion)
 
 ## 后续可扩展方向
 

@@ -11,6 +11,16 @@
     [FORMULA_COPY_FORMATS.LATEX_SOURCE]: "LaTeX (纯文本，无 $ 符号)"
   };
 
+  const MARKDOWN_FORMULA_WRAP_MODES = {
+    WITH_DELIMITERS: "with-delimiters",
+    BARE: "bare"
+  };
+
+  const MARKDOWN_FORMULA_WRAP_LABELS = {
+    [MARKDOWN_FORMULA_WRAP_MODES.WITH_DELIMITERS]: "带 $ / $$",
+    [MARKDOWN_FORMULA_WRAP_MODES.BARE]: "不带 $"
+  };
+
   const STORAGE_KEYS = {
     FORMULA_HISTORY: "formulaCopyHistory",
     SAVED_PROMPTS: "savedPrompts",
@@ -21,6 +31,7 @@
   const DEFAULT_SETTINGS = {
     formulaCopierEnabled: true,
     formulaCopyFormat: FORMULA_COPY_FORMATS.LATEX_SOURCE,
+    markdownFormulaWrapMode: MARKDOWN_FORMULA_WRAP_MODES.WITH_DELIMITERS,
     enterEnhancerEnabled: true,
     chatgptTimelineEnabled: true,
     notionCloseGuardEnabled: true
@@ -40,6 +51,12 @@
     return Object.values(FORMULA_COPY_FORMATS).includes(normalizedValue)
       ? normalizedValue
       : DEFAULT_SETTINGS.formulaCopyFormat;
+  }
+
+  function normalizeMarkdownFormulaWrapMode(value) {
+    return Object.values(MARKDOWN_FORMULA_WRAP_MODES).includes(value)
+      ? value
+      : DEFAULT_SETTINGS.markdownFormulaWrapMode;
   }
 
   function createItemId(prefix = "item") {
@@ -244,11 +261,14 @@
   globalThis.ChatGPTVoyagerShared = {
     FORMULA_COPY_FORMATS,
     FORMULA_COPY_FORMAT_LABELS,
+    MARKDOWN_FORMULA_WRAP_MODES,
+    MARKDOWN_FORMULA_WRAP_LABELS,
     STORAGE_KEYS,
     MAX_FORMULA_HISTORY_ITEMS,
     DEFAULT_SETTINGS,
     DEFAULT_LOCAL_DATA,
     normalizeFormulaCopyFormat,
+    normalizeMarkdownFormulaWrapMode,
     createItemId,
     normalizeWhitespace,
     truncateText,

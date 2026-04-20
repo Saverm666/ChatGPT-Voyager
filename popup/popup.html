@@ -61,6 +61,32 @@
       </section>
 
       <section class="panel">
+        <p class="section-title">成段复制公式格式</p>
+        <p class="group-desc">选择框选整段内容复制时，公式是否自动带上 $ / $$</p>
+
+        <label class="radio-row" for="markdown-formula-wrap-with-delimiters">
+          <input
+            id="markdown-formula-wrap-with-delimiters"
+            name="markdown-formula-wrap-mode"
+            type="radio"
+            value="with-delimiters"
+            checked
+          />
+          <span>带 $ / $$</span>
+        </label>
+
+        <label class="radio-row" for="markdown-formula-wrap-bare">
+          <input
+            id="markdown-formula-wrap-bare"
+            name="markdown-formula-wrap-mode"
+            type="radio"
+            value="bare"
+          />
+          <span>不带 $</span>
+        </label>
+      </section>
+
+      <section class="panel">
         <p class="label">功能开关</p>
 
         <label class="toggle-row" for="formula-copier-enabled">

@@ -1,9 +1,10 @@
 .formula-copier-hover,
 .formula-copier-selected {
   outline: 2px solid rgba(0, 0, 0, 0.72) !important;
-  border-radius: 5px;
+  outline-offset: 2px;
+  border-radius: 10px;
   cursor: pointer;
-  box-shadow: 0 0 5px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.14);
   transition: outline-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -458,10 +459,24 @@
 }
 
 .voyager-gpt-panel-item {
+  position: relative;
+}
+
+.voyager-gpt-panel-item-draggable {
+  cursor: grab;
+}
+
+.voyager-gpt-panel-item.is-dragging {
+  opacity: 0.6;
+  transform: scale(0.99);
+}
+
+.voyager-gpt-panel-item-button {
   appearance: none;
   display: grid;
   gap: 6px;
   width: 100%;
+  min-width: 0;
   padding: 11px 12px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
@@ -475,10 +490,16 @@
     transform 140ms ease;
 }
 
-.voyager-gpt-panel-item:hover {
+.voyager-gpt-panel-item-button:hover {
   background: rgba(243, 243, 245, 0.98);
   border-color: rgba(0, 0, 0, 0.12);
   transform: translateY(-1px);
+}
+
+.voyager-gpt-panel-item-row {
+  display: block;
+  min-width: 0;
+  padding-right: 34px;
 }
 
 .voyager-gpt-panel-item-title {
@@ -488,6 +509,62 @@
   line-height: 1.45;
   color: rgba(0, 0, 0, 0.86);
   word-break: break-word;
+}
+
+.voyager-gpt-panel-pin-button {
+  appearance: none;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.34);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.voyager-gpt-panel-pin-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.72);
+  transform: translateY(-1px);
+}
+
+.voyager-gpt-panel-pin-button.is-active {
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.voyager-gpt-panel-pin-button:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.22);
+  outline-offset: 2px;
+}
+
+.voyager-pin-icon {
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1;
+  font-family:
+    "Segoe UI Symbol",
+    "Apple Symbols",
+    "Noto Sans Symbols 2",
+    "Noto Sans Symbols",
+    sans-serif;
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  transition: transform 180ms ease;
+}
+
+.voyager-gpt-panel-pin-button.is-active .voyager-pin-icon {
+  transform: rotate(45deg);
 }
 
 .voyager-gpt-panel-expression {
@@ -658,14 +735,33 @@ html.dark .voyager-gpt-panel-link {
 }
 
 html.dark .voyager-gpt-panel-item {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-item-button {
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(52, 53, 65, 0.8);
   color: rgba(255, 255, 255, 0.88);
 }
 
-html.dark .voyager-gpt-panel-item:hover {
+html.dark .voyager-gpt-panel-item-button:hover {
   background: rgba(64, 65, 79, 0.96);
   border-color: rgba(255, 255, 255, 0.14);
+}
+
+html.dark .voyager-gpt-panel-pin-button {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+html.dark .voyager-gpt-panel-pin-button:hover,
+html.dark .voyager-gpt-panel-pin-button.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html.dark .voyager-gpt-panel-pin-button:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.3);
 }
 
 html.dark .voyager-gpt-panel-expression {

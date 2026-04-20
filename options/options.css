@@ -447,6 +447,21 @@ button {
     transform 140ms ease;
 }
 
+.history-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.prompt-card-draggable {
+  cursor: grab;
+}
+
+.prompt-card-draggable.is-dragging {
+  opacity: 0.6;
+  transform: scale(0.99);
+}
+
 .history-card-title,
 .prompt-card-title {
   margin: 0;
@@ -455,6 +470,34 @@ button {
   line-height: 1.45;
   color: var(--text);
   word-break: break-word;
+}
+
+.prompt-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-card-pin {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.prompt-pin-icon {
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1;
+  font-family:
+    "Segoe UI Symbol",
+    "Apple Symbols",
+    "Noto Sans Symbols 2",
+    "Noto Sans Symbols",
+    sans-serif;
+  width: 15px;
+  height: 15px;
+  transform-origin: 50% 50%;
 }
 
 .history-card-expression {
