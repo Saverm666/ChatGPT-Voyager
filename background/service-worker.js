@@ -56,14 +56,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "CREATE_BRANCH_PROMPT_DRAFT") {
-    const text = String(message.text || "").trim();
+    const text = String(message.text || "").replace(/\r\n/g, "\n");
     const sourceTurnId = String(message.sourceTurnId || "").trim();
     const sourcePath = String(message.sourcePath || "").trim();
     const sourceTabId = sender.tab?.id;
     const sourceUrl =
       typeof sender.tab?.url === "string" && sender.tab.url ? sender.tab.url : "";
 
-    if (!text || !sourceTurnId || typeof sourceTabId !== "number") {
+    if (!text.trim() || !sourceTurnId || typeof sourceTabId !== "number") {
       sendResponse({
         ok: false,
         error: "分支草稿参数不完整。"

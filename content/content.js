@@ -1058,6 +1058,10 @@ const markdownCopyModule = (() => {
   }
 
   return {
+    getSelectionMarkdown() {
+      return getMarkdownCopyPayload();
+    },
+
     setFormulaWrapMode(nextMode) {
       formulaWrapMode = normalizeMarkdownFormulaWrapMode(nextMode);
     },
@@ -1501,7 +1505,14 @@ const branchSelectionModule = (() => {
       return null;
     }
 
+    const markdown = markdownCopyModule.getSelectionMarkdown();
+
+    if (!markdown) {
+      return null;
+    }
+
     return {
+      markdown,
       text: selectedText,
       turnId,
       rect,
@@ -1976,6 +1987,21 @@ const branchSelectionModule = (() => {
       .trim();
   }
 
+  function formatBranchQuotedMarkdown(markdown) {
+    const normalized = String(markdown || "").replace(/\r\n/g, "\n").trim();
+
+    if (!normalized) {
+      return "";
+    }
+
+    const quoted = normalized
+      .split("\n")
+      .map((line) => `>  ${line}`)
+      .join("\n");
+
+    return `${quoted}\n\n`;
+  }
+
   function composerContainsText(text, composer = findComposerInput()) {
     if (!(composer instanceof HTMLElement)) {
       return false;
@@ -2065,7 +2091,8 @@ const branchSelectionModule = (() => {
       return false;
     }
 
-    const draftText = String(text || "").trim();
+    const rawText = String(text || "").replace(/\r\n/g, "\n");
+    const draftText = rawText.trim();
 
     if (!draftText) {
       return false;
@@ -2075,7 +2102,7 @@ const branchSelectionModule = (() => {
       return true;
     }
 
-    const nextText = draftText;
+    const nextText = rawText;
 
     composer.focus();
     selectElementContents(composer);
@@ -2206,7 +2233,7 @@ const branchSelectionModule = (() => {
 
       const saveDraftPromise = sendRuntimeMessage({
         type: "CREATE_BRANCH_PROMPT_DRAFT",
-        text: snapshot.text,
+        text: formatBranchQuotedMarkdown(snapshot.markdown),
         sourceTurnId: snapshot.turnId,
         sourcePath: window.location.pathname
       });
