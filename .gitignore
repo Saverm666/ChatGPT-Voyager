@@ -3,3 +3,4 @@
 *.tgz
 *:Zone.Identifier
 references/chatgpt-conversation-timeline/
+scripts/
