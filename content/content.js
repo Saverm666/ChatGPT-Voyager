@@ -166,6 +166,18 @@ function getClosestConversationTurnElement(node) {
   return element?.closest?.("[data-turn-id]") || null;
 }
 
+function getElementFromNode(node) {
+  if (node instanceof Element) {
+    return node;
+  }
+
+  if (node instanceof Node) {
+    return node.parentElement;
+  }
+
+  return null;
+}
+
 function getNormalizedElementText(element) {
   if (!(element instanceof Element)) {
     return "";
@@ -812,6 +824,68 @@ const markdownCopyModule = (() => {
     return `${lines.join("\n")}\n\n`;
   }
 
+  function isAssistantTurnElement(element) {
+    return Boolean(element instanceof Element && element.dataset?.turn === "assistant");
+  }
+
+  function getClosestAssistantMessageElement(node) {
+    const element = getElementFromNode(node);
+
+    if (!(element instanceof Element)) {
+      return null;
+    }
+
+    const messageElement = element.closest(
+      [
+        '[data-message-author-role="assistant"]',
+        '[data-testid="assistant-message"]',
+        '[data-testid^="assistant-message"]',
+        ".markdown"
+      ].join(", ")
+    );
+
+    if (!(messageElement instanceof Element)) {
+      return null;
+    }
+
+    const roleElement = messageElement.closest("[data-message-author-role]");
+    if (
+      roleElement instanceof Element &&
+      roleElement.getAttribute("data-message-author-role") !== "assistant"
+    ) {
+      return null;
+    }
+
+    const turnElement = getClosestConversationTurnElement(messageElement);
+    if (turnElement && !isAssistantTurnElement(turnElement)) {
+      return null;
+    }
+
+    return messageElement;
+  }
+
+  function getMarkdownSelectionRoot(range) {
+    const startTurn = getClosestConversationTurnElement(range.startContainer);
+    const endTurn = getClosestConversationTurnElement(range.endContainer);
+
+    if (startTurn && startTurn === endTurn && isAssistantTurnElement(startTurn)) {
+      return (
+        getClosestAssistantMessageElement(range.startContainer) ||
+        startTurn.querySelector('[data-message-author-role="assistant"], .markdown') ||
+        startTurn
+      );
+    }
+
+    const startMessage = getClosestAssistantMessageElement(range.startContainer);
+    const endMessage = getClosestAssistantMessageElement(range.endContainer);
+
+    if (startMessage && startMessage === endMessage) {
+      return startMessage;
+    }
+
+    return null;
+  }
+
   function serializeNodeToMarkdown(node, range, context = {}) {
     if (!(node instanceof Node)) {
       return "";
@@ -958,13 +1032,6 @@ const markdownCopyModule = (() => {
     }
 
     const range = selection.getRangeAt(0);
-    const startTurn = getClosestConversationTurnElement(range.startContainer);
-    const endTurn = getClosestConversationTurnElement(range.endContainer);
-
-    if (!startTurn || startTurn !== endTurn || startTurn.dataset.turn !== "assistant") {
-      return null;
-    }
-
     if (
       isEditableSelectionTarget(range.startContainer) ||
       isEditableSelectionTarget(range.endContainer)
@@ -972,8 +1039,11 @@ const markdownCopyModule = (() => {
       return null;
     }
 
-    const assistantRoot =
-      startTurn.querySelector('[data-message-author-role="assistant"], .markdown') || startTurn;
+    const assistantRoot = getMarkdownSelectionRoot(range);
+    if (!(assistantRoot instanceof Element)) {
+      return null;
+    }
+
     const markdown = cleanupMarkdownSpacing(
       Array.from(assistantRoot.childNodes)
         .map((child) => serializeNodeToMarkdown(child, range, { preserveWhitespace: false }))
